@@ -78,4 +78,8 @@ export const paymentService = {
     getAdminHistory: async () => api.get('/payments/admin/history')
 };
 
+export const aiService = {
+    getLivekitToken: async ({ roomName } = {}) => api.post('/ai/livekit/token', { roomName })
+};
+
 export default api;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, MicOff, Send, Circle, AudioLines, Keyboard, ChevronLeft, FileText } from 'lucide-react';
+import { Room, RoomEvent, Track } from 'livekit-client';
 import { WavRecorder } from '../../utils/wavRecorder';
 import { mergeWavBlobs, pcmChunksToWavBlob, mixWavBlobs } from '../../utils/wavMerge';
 import { RealtimeWS } from '../../services/realtimeWS';
@@ -7,6 +8,7 @@ import { PCMPlayer } from '../../utils/pcmPlayer';
 import { AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, buildSystemPrompt, buildContextForQuery, getAIResponse } from '../../services/azureAI';
 import { userAskedToCreateNote, userAskedToCreateTask, userAskedToScheduleMeeting } from '../../utils/noteIntents';
 import { recordTalkUsage } from '../../services/usageTracker';
+import { aiService } from '../../services/apiService';
 
 /** Keep MOM prompt under model limits and reduce latency on long conversations */
 const MAX_TRANSCRIPT_FOR_AI = 14000;
@@ -80,6 +82,8 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   const [inputMode, setInputMode] = useState('voice');
   const [voiceState, setVoiceState] = useState('idle');
   const [input, setInput] = useState('');
+  const [livekitAvailable, setLivekitAvailable] = useState(false);
+  const [livekitConnected, setLivekitConnected] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: 'ai',
@@ -104,6 +108,9 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   const savedNoteIdRef = useRef(null);
   const aiAudioChunksRef = useRef([]);
   const sessionStartRef = useRef(Date.now());
+  const livekitSessionRef = useRef(null);
+  const livekitRoomRef = useRef(null);
+  const livekitAudioElsRef = useRef(new Map());
 
   messagesRef.current = messages;
 
@@ -115,7 +122,9 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
 
   useEffect(() => {
     pcmPlayerRef.current = new PCMPlayer(24000);
-    const initSession = async () => {
+    let cancelled = false;
+
+    const initAzureSession = async () => {
       const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', notes);
       wsRef.current = new RealtimeWS(AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, ragPrompt);
 
@@ -172,18 +181,42 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
         });
       };
 
-      wsRef.current.onError = (err) => {
+      wsRef.current.onError = () => {
         setMessages((prev) => [...prev, { role: 'ai', text: 'Boss, connection dropped. Let me know if we should restart.' }]);
         setVoiceState('idle');
         setIsTyping(false);
       };
     };
 
-    initSession();
+    const initLivekitAvailability = async () => {
+      try {
+        const data = await aiService.getLivekitToken();
+        if (cancelled) return;
+        if (data?.enabled && data?.url && data?.token && data?.roomName) {
+          livekitSessionRef.current = { url: data.url, token: data.token, roomName: data.roomName };
+          setLivekitAvailable(true);
+          return;
+        }
+      } catch (e) {
+      }
+      if (!cancelled) await initAzureSession();
+    };
+
+    initLivekitAvailability();
     return () => {
+      cancelled = true;
       if (recorderRef.current?.isRecording) recorderRef.current.stop();
       if (pcmPlayerRef.current) pcmPlayerRef.current.close();
       if (wsRef.current) wsRef.current.close();
+      if (livekitRoomRef.current) {
+        try { livekitRoomRef.current.disconnect(); } catch (e) { }
+        livekitRoomRef.current = null;
+      }
+      for (const el of livekitAudioElsRef.current.values()) {
+        try { el.pause(); } catch (e) { }
+        try { el.remove(); } catch (e) { }
+      }
+      livekitAudioElsRef.current.clear();
     };
   }, []);
 
@@ -194,7 +227,151 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     }));
   };
 
+  const ensureAzureSession = useCallback(async () => {
+    if (wsRef.current) return;
+    const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', notes);
+    wsRef.current = new RealtimeWS(AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, ragPrompt);
+
+    wsRef.current.onOpen = () => console.log('Assistant active.');
+    wsRef.current.onAudioChunk = (base64PCM) => {
+      setVoiceState((vs) => vs !== 'ai-speaking' ? 'ai-speaking' : vs);
+      setIsTyping(false);
+      pcmPlayerRef.current.appendBase64(base64PCM);
+      aiAudioChunksRef.current.push(base64PCM);
+    };
+
+    wsRef.current.onText = (textDelta) => {
+      currentResponseTextRef.current += textDelta;
+      setMessages((prev) => {
+        const newMsg = [...prev];
+        let i = newMsg.length - 1;
+        while (i >= 0 && newMsg[i].role !== 'ai') i--;
+        if (i < 0) return prev;
+        newMsg[i] = { ...newMsg[i], text: currentResponseTextRef.current };
+        return newMsg;
+      });
+    };
+
+    wsRef.current.onAudioDone = () => setVoiceState(recorderRef.current?.isRecording ? 'listening' : 'idle');
+    wsRef.current.onSpeechStarted = () => {
+      setVoiceState('listening');
+      if (pcmPlayerRef.current) pcmPlayerRef.current.reset();
+    };
+
+    wsRef.current.onSpeechStopped = () => {
+      const seg = recorderRef.current?.exportIncrementalWav?.();
+      if (seg?.size) sessionWavBlobsRef.current.push(seg);
+      setVoiceState('processing');
+      setIsTyping(true);
+      const pendingId = `u-${Date.now()}`;
+      pendingUserMsgIdRef.current = pendingId;
+      setMessages((prev) => [...prev, { role: 'user', text: '🎤 Transcribing…', pendingUserId: pendingId }]);
+      currentResponseTextRef.current = '';
+      setMessages((prev) => [...prev, { role: 'ai', text: '' }]);
+    };
+
+    wsRef.current.onUserTranscript = (text) => {
+      const pid = pendingUserMsgIdRef.current;
+      pendingUserMsgIdRef.current = null;
+      const cleaned = (text || '').trim() || '(voice)';
+      setMessages((prev) => {
+        const idx = pid ? prev.findIndex((m) => m.pendingUserId === pid) : -1;
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], text: cleaned, pendingUserId: undefined };
+          return copy;
+        }
+        return prev;
+      });
+    };
+
+    wsRef.current.onError = () => {
+      setMessages((prev) => [...prev, { role: 'ai', text: 'Boss, connection dropped. Let me know if we should restart.' }]);
+      setVoiceState('idle');
+      setIsTyping(false);
+    };
+  }, [notes]);
+
+  const ensureLivekitSession = useCallback(async () => {
+    if (livekitSessionRef.current) return livekitSessionRef.current;
+    try {
+      const data = await aiService.getLivekitToken();
+      if (data?.enabled && data?.url && data?.token && data?.roomName) {
+        livekitSessionRef.current = { url: data.url, token: data.token, roomName: data.roomName };
+        setLivekitAvailable(true);
+        return livekitSessionRef.current;
+      }
+    } catch (e) {
+    }
+    setLivekitAvailable(false);
+    return null;
+  }, []);
+
   const startVoiceRecording = async () => {
+    const livekitSession = livekitAvailable ? (livekitSessionRef.current || await ensureLivekitSession()) : null;
+    if (livekitSession) {
+      const session = livekitSession;
+      try {
+        if (!livekitRoomRef.current) {
+          const room = new Room({ adaptiveStream: true, dynacast: true });
+
+          room.on(RoomEvent.ConnectionStateChanged, (state) => {
+            const connected = state === 'connected';
+            setLivekitConnected(connected);
+            if (!connected) {
+              setVoiceState('idle');
+            }
+          });
+
+          room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+            if (participant?.isLocal) return;
+            if (track.kind !== Track.Kind.Audio) return;
+            const el = track.attach();
+            el.autoplay = true;
+            el.playsInline = true;
+            livekitAudioElsRef.current.set(publication.trackSid, el);
+            try { document.body.appendChild(el); } catch (e) { }
+            setVoiceState('ai-speaking');
+          });
+
+          room.on(RoomEvent.TrackUnsubscribed, (track, publication) => {
+            if (track?.kind !== Track.Kind.Audio) return;
+            const el = livekitAudioElsRef.current.get(publication.trackSid);
+            if (el) {
+              try { el.pause(); } catch (e) { }
+              try { el.remove(); } catch (e) { }
+              livekitAudioElsRef.current.delete(publication.trackSid);
+            }
+            setVoiceState(livekitRoomRef.current ? 'listening' : 'idle');
+          });
+
+          room.on(RoomEvent.DataReceived, (payload) => {
+            const text = new TextDecoder().decode(payload);
+            let parsed = null;
+            try { parsed = JSON.parse(text); } catch (e) { }
+            const role = parsed?.role === 'user' ? 'user' : 'ai';
+            const msgText = typeof parsed?.text === 'string' ? parsed.text : text;
+            if (!msgText) return;
+            setMessages((prev) => [...prev, { role, text: msgText }]);
+          });
+
+          await room.connect(session.url, session.token);
+          livekitRoomRef.current = room;
+        }
+
+        await livekitRoomRef.current.localParticipant.setMicrophoneEnabled(true);
+        setIsMuted(false);
+        setVoiceState('listening');
+        return;
+      } catch (e) {
+        const reason = typeof e?.message === 'string' ? e.message : String(e);
+        console.error('LiveKit start failed:', e);
+        setMessages((prev) => [...prev, { role: 'ai', text: `Boss, I could not start the LiveKit session (${reason}). Falling back.` }]);
+        setVoiceState('idle');
+        await ensureAzureSession();
+      }
+    }
+
     if (pcmPlayerRef.current) pcmPlayerRef.current.reset();
     if (recorderRef.current?.isRecording) {
       setVoiceState('listening');
@@ -212,6 +389,17 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   };
 
   const stopVoiceRecording = async () => {
+    if (livekitRoomRef.current) {
+      try {
+        try { await livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false); } catch (e) { }
+        livekitRoomRef.current.disconnect();
+        livekitRoomRef.current = null;
+        setLivekitConnected(false);
+        setVoiceState('idle');
+        return;
+      } catch (e) {
+      }
+    }
     if (recorderRef.current?.isRecording) {
       const tail = recorderRef.current.exportIncrementalWav?.();
       if (tail?.size) sessionWavBlobsRef.current.push(tail);
@@ -230,7 +418,29 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     setVoiceState('processing');
     currentResponseTextRef.current = '';
     setMessages((prev) => [...prev, { role: 'ai', text: '' }]);
-    wsRef.current.commitAudioAndRequestResponse([...getMessageHistory(), { role: 'user', content: text }]);
+    if (wsRef.current) {
+      wsRef.current.commitAudioAndRequestResponse([...getMessageHistory(), { role: 'user', content: text }]);
+      return;
+    }
+    (async () => {
+      try {
+        const reply = await getAIResponse(text, notes);
+        setIsTyping(false);
+        setVoiceState('idle');
+        currentResponseTextRef.current = '';
+        setMessages((prev) => {
+          const newMsg = [...prev];
+          let i = newMsg.length - 1;
+          while (i >= 0 && newMsg[i].role !== 'ai') i--;
+          if (i < 0) return prev;
+          newMsg[i] = { ...newMsg[i], text: reply || '' };
+          return newMsg;
+        });
+      } catch (e) {
+        setIsTyping(false);
+        setVoiceState('idle');
+      }
+    })();
   };
 
   const blobToBase64 = (blob) => new Promise((resolve) => {
@@ -260,7 +470,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
       const newId = Date.now();
       const transcript = formatTalkTranscript(messagesRef.current);
       const audioUrl = await buildAudioUrl();
-      
+
       const draft = {
         id: newId,
         title: auto ? 'Note from Talk (Extracting...)' : 'Talk Session (Extracting...)',
@@ -306,9 +516,9 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
               diarization: p.diarization,
               callStatus: p.call_status || 'completed'
             });
-            
+
             if (typeof scheduleFromNote === 'function' && p.mom?.title) {
-               scheduleFromNote({ ...draft, transcript, mom: p.mom?.discussion?.join('\n') }, transcript);
+              scheduleFromNote({ ...draft, transcript, mom: p.mom?.discussion?.join('\n') }, transcript);
             }
           }
         } catch (e) {
@@ -349,7 +559,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     if (last?.role !== 'user' || last.pendingUserId) return;
     const idx = messages.length - 1;
     if (idx <= autoNoteHandledForMessageIndex.current) return;
-    
+
     if (userAskedToCreateNote(last.text)) {
       autoNoteHandledForMessageIndex.current = idx;
       saveTalkNote({ auto: true });
@@ -380,7 +590,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
           <div>
             <h2 className="font-bold text-slate-900 text-[15px] tracking-tight">AI Meeting Assistant</h2>
             <p className="text-[10px] text-emerald-500 font-bold flex items-center gap-1 uppercase tracking-widest">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Realtime Elite Active
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> {livekitAvailable ? (livekitConnected ? 'LiveKit Connected' : 'LiveKit Ready') : 'Realtime Elite Active'}
             </p>
           </div>
         </div>
@@ -404,9 +614,8 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
       <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-hide" ref={scrollRef}>
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] leading-relaxed shadow-sm ${
-              msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none font-medium'
-            }`}>
+            <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none font-medium'
+              }`}>
               {msg.text}
             </div>
           </div>
@@ -428,10 +637,17 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
             {voiceState !== 'idle' && (
               <div className="flex gap-3">
                 <button
-                  onClick={() => { setIsMuted(!isMuted); recorderRef.current?.setMuted(!isMuted); }}
-                  className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
-                    isMuted ? 'bg-amber-500 text-white shadow-lg shadow-amber-200' : 'bg-slate-800 text-white shadow-lg shadow-slate-200'
-                  }`}
+                  onClick={() => {
+                    const next = !isMuted;
+                    setIsMuted(next);
+                    if (livekitRoomRef.current) {
+                      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(!next);
+                      return;
+                    }
+                    recorderRef.current?.setMuted(next);
+                  }}
+                  className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isMuted ? 'bg-amber-500 text-white shadow-lg shadow-amber-200' : 'bg-slate-800 text-white shadow-lg shadow-slate-200'
+                    }`}
                 >
                   {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
                   {isMuted ? 'Unmute' : 'Mute'}
@@ -444,7 +660,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
                 </button>
               </div>
             )}
-            
+
             {voiceState === 'idle' ? (
               <button
                 onClick={startVoiceRecording}
@@ -455,17 +671,17 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
             ) : (
               <div className="flex flex-col items-center gap-4">
                 <div className="relative w-24 h-24 flex items-center justify-center">
-                    <div className="absolute inset-0 bg-emerald-400 rounded-full animate-ping opacity-20" />
-                    <div className="absolute inset-0 bg-emerald-500 rounded-full animate-pulse opacity-10 scale-125" />
-                    <div className="relative z-10 w-20 h-20 rounded-full bg-slate-900 flex items-center justify-center text-white shadow-2xl border-4 border-white overflow-hidden">
-                        {voiceState === 'ai-speaking' ? (
-                            <div className="flex gap-1 items-end h-6">
-                                {[1,2,3,4,3,2,1].map((h, i) => (
-                                    <div key={i} className="w-1 bg-brand-400 rounded-full animate-pulse" style={{ height: `${h * 4}px` }} />
-                                ))}
-                            </div>
-                        ) : <Mic size={28} className="animate-pulse text-brand-400" />}
-                    </div>
+                  <div className="absolute inset-0 bg-emerald-400 rounded-full animate-ping opacity-20" />
+                  <div className="absolute inset-0 bg-emerald-500 rounded-full animate-pulse opacity-10 scale-125" />
+                  <div className="relative z-10 w-20 h-20 rounded-full bg-slate-900 flex items-center justify-center text-white shadow-2xl border-4 border-white overflow-hidden">
+                    {voiceState === 'ai-speaking' ? (
+                      <div className="flex gap-1 items-end h-6">
+                        {[1, 2, 3, 4, 3, 2, 1].map((h, i) => (
+                          <div key={i} className="w-1 bg-brand-400 rounded-full animate-pulse" style={{ height: `${h * 4}px` }} />
+                        ))}
+                      </div>
+                    ) : <Mic size={28} className="animate-pulse text-brand-400" />}
+                  </div>
                 </div>
                 <p className="text-[12px] font-black text-slate-400 uppercase tracking-widest">
                   {voiceState === 'listening' ? 'Agent Listening' : voiceState === 'processing' ? 'Thinking' : 'Agent Speaking'}
@@ -473,8 +689,8 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
               </div>
             )}
             <button
-               onClick={() => setInputMode('text')}
-               className="w-full flex items-center justify-center gap-1.5 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-brand-600 transition-colors"
+              onClick={() => setInputMode('text')}
+              className="w-full flex items-center justify-center gap-1.5 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-brand-600 transition-colors"
             >
               <Keyboard size={14} /> Switch to Keyboard
             </button>
@@ -509,12 +725,12 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
 }
 
 function RefreshCw({ size, className }) {
-    return (
-        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
-            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
-            <path d="M21 3v5h-5"/>
-            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
-            <path d="M3 21v-5h5"/>
-        </svg>
-    );
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+      <path d="M3 21v-5h5" />
+    </svg>
+  );
 }

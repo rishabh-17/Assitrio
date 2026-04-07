@@ -4,6 +4,7 @@ const multer = require('multer');
 const upload = multer();
 const Config = require('../models/Config');
 const User = require('../models/User');
+const { AccessToken } = require('livekit-server-sdk');
 
 // Base URLs - they should have placeholders for deployment name
 const BASE_PROJECT_RESPONSE_URL = 'https://triotechcode.services.ai.azure.com/api/projects/triotechcode/openai/v1/responses';
@@ -216,5 +217,54 @@ exports.processSTT = async (req, res) => {
   } catch (err) {
     console.error('STT API Error:', err.response?.data || err.message);
     res.status(err.response?.status || 500).json(err.response?.data || { error: err.message });
+  }
+};
+
+exports.getLivekitToken = async (req, res) => {
+  try {
+    const botEnabled = String(process.env.LIVEKIT_BOT_ENABLED || '').toLowerCase() === 'true';
+    if (!botEnabled) {
+      res.json({ enabled: false });
+      return;
+    }
+
+    const livekitUrl = typeof process.env.LIVEKIT_URL === 'string' ? process.env.LIVEKIT_URL.trim() : '';
+    const apiKey = typeof process.env.LIVEKIT_API_KEY === 'string' ? process.env.LIVEKIT_API_KEY.trim() : '';
+    const apiSecret = typeof process.env.LIVEKIT_API_SECRET === 'string' ? process.env.LIVEKIT_API_SECRET.trim() : '';
+
+    if (!livekitUrl || !apiKey || !apiSecret) {
+      res.status(500).json({ error: 'Missing LiveKit server configuration (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET)' });
+      return;
+    }
+
+    const requestedRoomName = typeof req.body?.roomName === 'string' ? req.body.roomName.trim() : '';
+    const userId = req.user?.id ? String(req.user.id) : 'anon';
+    const roomName = requestedRoomName || `talk-${userId}-${Date.now()}`;
+    const identity = req.user?.id ? `user-${userId}` : `anon-${Date.now()}`;
+
+    const token = new AccessToken(apiKey, apiSecret, {
+      identity,
+      name: req.user?.username ? String(req.user.username) : 'User',
+      ttl: 60 * 60
+    });
+
+    token.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true
+    });
+
+    const jwt = await token.toJwt();
+    res.json({
+      enabled: true,
+      url: livekitUrl,
+      roomName,
+      token: jwt
+    });
+  } catch (err) {
+    console.error('LiveKit token error:', err.message);
+    res.status(500).json({ error: 'Failed to create LiveKit token' });
   }
 };
