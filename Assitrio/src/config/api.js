@@ -8,7 +8,12 @@ export function getApiBaseUrlCandidates() {
 
     try {
         if (Capacitor?.isNativePlatform?.() && Capacitor?.getPlatform?.() === 'android') {
-            return ['http://10.0.2.2:5050/api', 'http://4.186.31.52:5050/api'];
+            const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+            const isProbablyEmulator = /sdk_gphone|Android SDK built for|Emulator/i.test(ua);
+            if (isProbablyEmulator) {
+                return ['http://10.0.2.2:5050/api', 'http://4.186.31.52:5050/api'];
+            }
+            return ['http://4.186.31.52:5050/api'];
         }
     } catch (e) {
     }

@@ -34,8 +34,8 @@ public class MainActivity extends BridgeActivity {
   }
 
   private void applyWebViewSettings() {
-    if (!isEmulator) return;
     try {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) return;
       if (this.getBridge() == null) return;
       WebView webView = this.getBridge().getWebView();
       if (webView == null) return;
