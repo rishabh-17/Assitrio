@@ -1,5 +1,9 @@
 {
   "appId": "com.assistrio.app",
   "appName": "Assistrio",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
 }

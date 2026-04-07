@@ -1,5 +1,5 @@
 import { searchTranscriptions } from './transcriptionStore.js';
-import { API_BASE_URL } from '../config/api';
+import { getApiBaseUrl } from '../config/api';
 
 const AZURE_REALTIME_ENDPOINT = import.meta.env?.VITE_AZURE_REALTIME_ENDPOINT || 'https://triotechcode.cognitiveservices.azure.com/openai/deployments/gpt-realtime-1.5/chat/completions?api-version=2024-10-01-preview';
 const AZURE_REALTIME_KEY = import.meta.env?.VITE_AZURE_REALTIME_KEY || '';
@@ -89,7 +89,7 @@ function extractAssistantContent(data) {
 
 async function getAIResponse(userMessage, notes = [], isExtraction = false) {
   try {
-    const response = await fetch(`${API_BASE_URL}/ai/azure-openai`, {
+    const response = await fetch(`${getApiBaseUrl()}/ai/azure-openai`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -118,7 +118,7 @@ async function getAIResponse(userMessage, notes = [], isExtraction = false) {
 
 async function callAzureRealtime(userMessage, notes = [], isExtraction = false, audioBase64 = null, requestAudio = false, messageHistory = []) {
   try {
-    const response = await fetch(`${API_BASE_URL}/ai/azure-realtime`, {
+    const response = await fetch(`${getApiBaseUrl()}/ai/azure-realtime`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -162,7 +162,7 @@ async function processSTTWithAzure(audioBlob) {
       locales: ["en-US", "hi-IN"],
       diarization: { maxSpeakers: 2, enabled: true }
     }));
-    const response = await fetch(`${API_BASE_URL}/ai/azure-stt`, {
+    const response = await fetch(`${getApiBaseUrl()}/ai/azure-stt`, {
       method: 'POST',
       body: formData
     });

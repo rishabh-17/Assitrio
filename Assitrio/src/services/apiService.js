@@ -1,13 +1,14 @@
 import axios from 'axios';
-import { API_BASE_URL } from '../config/api';
+import { getApiBaseUrl, setApiBaseUrl } from '../config/api';
 
 const api = axios.create({
-    baseURL: API_BASE_URL,
+    baseURL: getApiBaseUrl(),
 });
 
 // Add a request interceptor to include the JWT token
 api.interceptors.request.use(
     (config) => {
+        config.baseURL = getApiBaseUrl();
         const session = localStorage.getItem('assistrio-session-v2');
         if (session) {
             const { token } = JSON.parse(session);
@@ -22,7 +23,10 @@ api.interceptors.request.use(
 
 // Add a response interceptor to handle data extraction and common errors
 api.interceptors.response.use(
-    (response) => response.data,
+    (response) => {
+        try { setApiBaseUrl(response.config.baseURL); } catch (e) {}
+        return response.data;
+    },
     (error) => {
         if (error.response && error.response.status === 401) {
             console.error('Unauthorized access - potential token expiration');
