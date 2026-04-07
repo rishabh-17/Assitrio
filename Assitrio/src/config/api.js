@@ -1,4 +1,4 @@
-export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://localhost:5050/api';
+export const API_BASE_URL = import.meta.env?.VITE_API_BASE_URL || 'http://4.186.31.52:5050/api';
 
 export const getHeaders = () => {
     const session = localStorage.getItem('assistrio-session-v2');
