@@ -111,7 +111,7 @@ async function getAIResponse(userMessage, notes = [], isExtraction = false) {
     throw new Error(`AI endpoint failed: ${response.status}`);
   } catch (error) {
     console.warn('Azure AI Error:', error.message);
-    if (isExtraction) throw error; 
+    if (isExtraction) throw error;
     return getLocalFallbackResponse(userMessage, notes);
   }
 }
@@ -134,8 +134,8 @@ async function callAzureRealtime(userMessage, notes = [], isExtraction = false, 
       const messageObj = data.choices?.[0]?.message;
       if (requestAudio && messageObj?.audio?.data) {
         return {
-           text: messageObj.audio.transcript || messageObj.content || '',
-           audioBase64: messageObj.audio.data
+          text: messageObj.audio.transcript || messageObj.content || '',
+          audioBase64: messageObj.audio.data
         };
       }
       return messageObj?.content || data.message;
@@ -154,25 +154,191 @@ async function processAudioWithAzure(audioBase64, userMessage = '', notes = [], 
   return callAzureRealtime(userMessage, notes, true, audioBase64, requestAudioResponse, messageHistory);
 }
 
+function readAscii(view, offset, length) {
+  let out = '';
+  for (let i = 0; i < length; i++) out += String.fromCharCode(view.getUint8(offset + i));
+  return out;
+}
+
+function parseWav(arrayBuffer) {
+  if (!arrayBuffer || arrayBuffer.byteLength < 44) return null;
+  const view = new DataView(arrayBuffer);
+  if (readAscii(view, 0, 4) !== 'RIFF') return null;
+  if (readAscii(view, 8, 4) !== 'WAVE') return null;
+
+  let offset = 12;
+  let fmt = null;
+  let dataOffset = null;
+  let dataSize = null;
+
+  while (offset + 8 <= view.byteLength) {
+    const id = readAscii(view, offset, 4);
+    const size = view.getUint32(offset + 4, true);
+    const chunkStart = offset + 8;
+
+    if (id === 'fmt ' && chunkStart + 16 <= view.byteLength) {
+      const audioFormat = view.getUint16(chunkStart + 0, true);
+      const numChannels = view.getUint16(chunkStart + 2, true);
+      const sampleRate = view.getUint32(chunkStart + 4, true);
+      const bitsPerSample = view.getUint16(chunkStart + 14, true);
+      fmt = { audioFormat, numChannels, sampleRate, bitsPerSample };
+    } else if (id === 'data') {
+      dataOffset = chunkStart;
+      dataSize = Math.min(size, Math.max(0, view.byteLength - dataOffset));
+      break;
+    }
+
+    offset = chunkStart + size + (size % 2);
+  }
+
+  if (!fmt || dataOffset === null || dataSize === null) return null;
+  if (fmt.audioFormat !== 1) return null;
+  if (!fmt.sampleRate || !fmt.numChannels || !fmt.bitsPerSample) return null;
+
+  return {
+    ...fmt,
+    dataOffset,
+    dataSize
+  };
+}
+
+function buildWavBlobFromPcm16(pcm16, sampleRate) {
+  const numChannels = 1;
+  const byteRate = sampleRate * numChannels * 2;
+  const blockAlign = numChannels * 2;
+
+  const buffer = new ArrayBuffer(44 + pcm16.length * 2);
+  const view = new DataView(buffer);
+
+  const writeString = (v, offset, string) => {
+    for (let i = 0; i < string.length; i++) v.setUint8(offset + i, string.charCodeAt(i));
+  };
+
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + pcm16.length * 2, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, 16, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, pcm16.length * 2, true);
+
+  const outOff = 44;
+  for (let i = 0; i < pcm16.length; i++) {
+    view.setInt16(outOff + i * 2, pcm16[i], true);
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+function splitWavArrayBuffer(arrayBuffer, maxChunkSeconds) {
+  const info = parseWav(arrayBuffer);
+  if (!info) return null;
+  if (info.bitsPerSample !== 16) return null;
+
+  const bytesPerSample = info.bitsPerSample / 8;
+  const bytesPerFrame = bytesPerSample * info.numChannels;
+  const totalFrames = Math.floor(info.dataSize / bytesPerFrame);
+  const framesPerChunk = Math.max(1, Math.floor(maxChunkSeconds * info.sampleRate));
+
+  const pcmBytes = arrayBuffer.slice(info.dataOffset, info.dataOffset + info.dataSize);
+  const pcmInterleaved = new Int16Array(pcmBytes);
+
+  let mono;
+  if (info.numChannels === 1) {
+    mono = pcmInterleaved;
+  } else {
+    mono = new Int16Array(totalFrames);
+    for (let i = 0; i < totalFrames; i++) {
+      let sum = 0;
+      const base = i * info.numChannels;
+      for (let c = 0; c < info.numChannels; c++) sum += pcmInterleaved[base + c] || 0;
+      mono[i] = Math.max(-32768, Math.min(32767, Math.round(sum / info.numChannels)));
+    }
+  }
+
+  if (mono.length <= framesPerChunk) {
+    return [buildWavBlobFromPcm16(mono, info.sampleRate)];
+  }
+
+  const chunks = [];
+  for (let start = 0; start < mono.length; start += framesPerChunk) {
+    const end = Math.min(mono.length, start + framesPerChunk);
+    const slice = mono.subarray(start, end);
+    chunks.push(buildWavBlobFromPcm16(slice, info.sampleRate));
+  }
+  return chunks;
+}
+
+async function transcribeWavOnce(audioBlob) {
+  const formData = new FormData();
+  formData.append('audio', audioBlob, 'recording.wav');
+  formData.append('definition', JSON.stringify({
+    locales: ["en-US", "hi-IN"],
+    diarization: { maxSpeakers: 2, enabled: true }
+  }));
+  const response = await fetch(`${getApiBaseUrl()}/ai/azure-stt`, {
+    method: 'POST',
+    body: formData
+  });
+  if (response.ok) {
+    const data = await response.json();
+    return data.combinedPhrases?.[0]?.text || data.text || data.displayText || '';
+  }
+  const errorText = await response.text();
+  const err = new Error(`STT failed (HTTP ${response.status})`);
+  err.status = response.status;
+  err.body = errorText;
+  throw err;
+}
+
+async function transcribeWavWithChunking(audioBlob, maxChunkSeconds = 240) {
+  const arrayBuffer = await audioBlob.arrayBuffer();
+  const info = parseWav(arrayBuffer);
+  if (!info) return await transcribeWavOnce(audioBlob);
+
+  const bytesPerSecond = info.sampleRate * info.numChannels * (info.bitsPerSample / 8);
+  const durationSeconds = bytesPerSecond > 0 ? info.dataSize / bytesPerSecond : 0;
+  if (!durationSeconds || durationSeconds <= maxChunkSeconds + 1) {
+    return await transcribeWavOnce(audioBlob);
+  }
+
+  const chunks = splitWavArrayBuffer(arrayBuffer, maxChunkSeconds);
+  if (!chunks || chunks.length <= 1) return await transcribeWavOnce(audioBlob);
+
+  const parts = [];
+  for (const chunk of chunks) {
+    const t = (await transcribeWavOnce(chunk)).trim();
+    if (t) parts.push(t);
+  }
+  return parts.join('\n').trim();
+}
+
 async function processSTTWithAzure(audioBlob) {
   try {
-    const formData = new FormData();
-    formData.append('audio', audioBlob, 'recording.wav');
-    formData.append('definition', JSON.stringify({
-      locales: ["en-US", "hi-IN"],
-      diarization: { maxSpeakers: 2, enabled: true }
-    }));
-    const response = await fetch(`${getApiBaseUrl()}/ai/azure-stt`, {
-      method: 'POST',
-      body: formData
-    });
-    if (response.ok) {
-      const data = await response.json();
-      return data.combinedPhrases?.[0]?.text || data.text || data.displayText || '';
+    const configuredMaxChunkSeconds = Number(import.meta.env?.VITE_STT_MAX_CHUNK_SECONDS);
+    const configuredRetryChunkSeconds = Number(import.meta.env?.VITE_STT_RETRY_CHUNK_SECONDS);
+    const maxChunkSeconds = Number.isFinite(configuredMaxChunkSeconds) && configuredMaxChunkSeconds > 0
+      ? configuredMaxChunkSeconds
+      : 240;
+    const retryChunkSeconds = Number.isFinite(configuredRetryChunkSeconds) && configuredRetryChunkSeconds > 0
+      ? configuredRetryChunkSeconds
+      : 120;
+
+    try {
+      return await transcribeWavWithChunking(audioBlob, maxChunkSeconds);
+    } catch (e) {
+      const status = e?.status;
+      if (status && (status === 400 || status === 408 || status === 413 || status === 414 || status === 429 || status >= 500)) {
+        return await transcribeWavWithChunking(audioBlob, retryChunkSeconds);
+      }
+      throw e;
     }
-    const errorText = await response.text();
-    console.error('STT API Error:', errorText);
-    throw new Error(`STT failed (HTTP ${response.status})`);
   } catch (error) {
     console.warn('Azure STT failed:', error.message);
     throw error;
@@ -197,10 +363,10 @@ function getLocalFallbackResponse(query, notes = []) {
   return `Boss, I can help you recall details from your ${notes.length} saved memories. Try asking about a specific person or project!`;
 }
 
-export { 
-  buildSystemPrompt, 
-  buildContextForQuery, 
-  AZURE_REALTIME_ENDPOINT, 
+export {
+  buildSystemPrompt,
+  buildContextForQuery,
+  AZURE_REALTIME_ENDPOINT,
   AZURE_REALTIME_KEY,
   getAIResponse,
   processAudioWithAzure,

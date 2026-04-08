@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, Square, ChevronLeft } from 'lucide-react';
+import { Mic, Square, ChevronLeft, Upload } from 'lucide-react';
 import { processSTTWithAzure, getAIResponse } from '../../services/azureAI';
 import { WavRecorder } from '../../utils/wavRecorder';
 import { userAskedToCreateNote } from '../../utils/noteIntents';
@@ -52,12 +52,13 @@ export default function ListenSimulator({
   onClose,
   onSaveDraft,
   updateNote,
-  appendActivities = () => {},
+  appendActivities = () => { },
   scheduleFromNote,
 }) {
   const [transcript, setTranscript] = useState('Initializing Elite Recorder...');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const recorderRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const initRecording = async () => {
@@ -89,19 +90,32 @@ export default function ListenSimulator({
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
-  const handleStop = async () => {
-    let localAudioUrl = null;
-    let audioBlob = null;
-    if (recorderRef.current && recorderRef.current.isRecording) {
-      try {
-        audioBlob = await recorderRef.current.stop();
-        localAudioUrl = URL.createObjectURL(audioBlob);
-      } catch (err) { console.error('Audio encoding failed:', err); }
-    }
+  const getBlobDurationSeconds = (blob) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio();
+    const cleanup = () => {
+      try { URL.revokeObjectURL(url); } catch (e) { }
+    };
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => {
+      const d = Number.isFinite(audio.duration) ? audio.duration : 0;
+      cleanup();
+      resolve(d);
+    };
+    audio.onerror = (e) => {
+      cleanup();
+      reject(e);
+    };
+    audio.src = url;
+  });
 
-    const durationMins = Math.max(1, Math.floor(elapsedSeconds / 60));
+  const processAudioToNote = async (audioBlob, localAudioUrl, durationSecondsOverride = null) => {
+    const durationSeconds = typeof durationSecondsOverride === 'number' && Number.isFinite(durationSecondsOverride)
+      ? durationSecondsOverride
+      : elapsedSeconds;
+    const durationMins = Math.max(1, Math.floor(durationSeconds / 60));
     const newId = Date.now();
-    recordListenUsage(elapsedSeconds);
+    recordListenUsage(durationSeconds);
 
     const draft = {
       id: newId,
@@ -175,10 +189,43 @@ export default function ListenSimulator({
     })();
   };
 
+  const handleStop = async () => {
+    let localAudioUrl = null;
+    let audioBlob = null;
+    if (recorderRef.current && recorderRef.current.isRecording) {
+      try {
+        audioBlob = await recorderRef.current.stop();
+        localAudioUrl = URL.createObjectURL(audioBlob);
+      } catch (err) { console.error('Audio encoding failed:', err); }
+    }
+    await processAudioToNote(audioBlob, localAudioUrl, elapsedSeconds);
+  };
+
+  const handlePickFile = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    if (recorderRef.current && recorderRef.current.isRecording) {
+      try { await recorderRef.current.stop(); } catch (err) { }
+    }
+
+    const localAudioUrl = URL.createObjectURL(file);
+    let durationSeconds = 0;
+    try {
+      durationSeconds = await getBlobDurationSeconds(file);
+    } catch (err) { }
+    await processAudioToNote(file, localAudioUrl, durationSeconds);
+  };
+
   return (
     <div className="absolute inset-0 bg-slate-950 z-[110] flex flex-col items-center justify-between p-6 text-white animate-slide-bottom overflow-hidden">
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-500 via-emerald-500 to-brand-700 animate-shimmer" />
-      
+
       <div className="w-full flex justify-between items-center mt-8">
         <div className="bg-slate-900 px-4 py-2 rounded-2xl text-[10px] font-black tracking-widest flex items-center gap-2 border border-white/10 shadow-xl">
           <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-lg shadow-red-500/50" />
@@ -199,8 +246,8 @@ export default function ListenSimulator({
         </div>
 
         <div className="mb-8 flex flex-col items-center gap-2">
-            <span className="text-4xl font-mono font-black text-white tracking-widest">{formatTime(elapsedSeconds)}</span>
-            <div className="h-1 w-12 bg-brand-500 rounded-full" />
+          <span className="text-4xl font-mono font-black text-white tracking-widest">{formatTime(elapsedSeconds)}</span>
+          <div className="h-1 w-12 bg-brand-500 rounded-full" />
         </div>
 
         <div className="max-w-md w-full text-center px-4">
@@ -210,15 +257,28 @@ export default function ListenSimulator({
       </div>
 
       <div className="w-full space-y-4 mb-8">
-          <p className="text-[11px] text-slate-500 text-center font-medium uppercase tracking-wider px-6 opacity-60">
-            Professional MOM and analysis will be generated post-meeting.
-          </p>
-          <button
-            onClick={handleStop}
-            className="w-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-[0.15em] py-5 rounded-[24px] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-2xl shadow-red-900/40 border border-red-500/50"
-          >
-            <Square fill="currentColor" size={18} /> Finish Meeting
-          </button>
+        <p className="text-[11px] text-slate-500 text-center font-medium uppercase tracking-wider px-6 opacity-60">
+          Professional MOM and analysis will be generated post-meeting.
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="audio/*"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
+        <button
+          onClick={handlePickFile}
+          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-[0.15em] py-4 rounded-[24px] flex items-center justify-center gap-3 active:scale-95 transition-all border border-white/10"
+        >
+          <Upload size={18} /> Upload Audio File
+        </button>
+        <button
+          onClick={handleStop}
+          className="w-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-[0.15em] py-5 rounded-[24px] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-2xl shadow-red-900/40 border border-red-500/50"
+        >
+          <Square fill="currentColor" size={18} /> Finish Meeting
+        </button>
       </div>
     </div>
   );
