@@ -5,7 +5,6 @@ import { WavRecorder } from '../../utils/wavRecorder';
 import { userAskedToCreateNote } from '../../utils/noteIntents';
 import { recordListenUsage } from '../../services/usageTracker';
 
-/** Keep MOM prompt under model limits and reduce latency on long recordings */
 const MAX_TRANSCRIPT_FOR_AI = 14000;
 
 const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze the provided transcript (from a recorded meeting) and generate a production-ready structured output in EXACTLY this JSON format (respond ONLY with the JSON block):
@@ -48,236 +47,155 @@ IMPORTANT RULES:
 Transcript:
 `;
 
-export default function ListenSimulator({
-  onClose,
-  onSaveDraft,
-  updateNote,
-  appendActivities = () => { },
-  scheduleFromNote,
-}) {
+export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appendActivities = () => { }, scheduleFromNote }) {
   const [transcript, setTranscript] = useState('Initializing Elite Recorder...');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const recorderRef = useRef(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
-    const initRecording = async () => {
+    const init = async () => {
       try {
         recorderRef.current = new WavRecorder();
         await recorderRef.current.start();
         setTranscript('Elite Assistant is listening...');
-      } catch (err) {
-        setTranscript('Microphone access denied.');
-      }
+      } catch { setTranscript('Microphone access denied.'); }
     };
-    initRecording();
-
-    return () => {
-      if (recorderRef.current && recorderRef.current.isRecording) {
-        recorderRef.current.stop();
-      }
-    };
+    init();
+    return () => { if (recorderRef.current?.isRecording) recorderRef.current.stop(); };
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    const timer = setInterval(() => setElapsedSeconds(s => s + 1), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const formatTime = (s) => {
-    const mins = Math.floor(s / 60);
-    const secs = s % 60;
-    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-  };
+  const formatTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
   const getBlobDurationSeconds = (blob) => new Promise((resolve, reject) => {
     const url = URL.createObjectURL(blob);
     const audio = new Audio();
-    const cleanup = () => {
-      try { URL.revokeObjectURL(url); } catch (e) { }
-    };
     audio.preload = 'metadata';
-    audio.onloadedmetadata = () => {
-      const d = Number.isFinite(audio.duration) ? audio.duration : 0;
-      cleanup();
-      resolve(d);
-    };
-    audio.onerror = (e) => {
-      cleanup();
-      reject(e);
-    };
+    audio.onloadedmetadata = () => { const d = Number.isFinite(audio.duration) ? audio.duration : 0; try { URL.revokeObjectURL(url); } catch { } resolve(d); };
+    audio.onerror = (e) => { try { URL.revokeObjectURL(url); } catch { } reject(e); };
     audio.src = url;
   });
 
   const processAudioToNote = async (audioBlob, localAudioUrl, durationSecondsOverride = null) => {
-    const durationSeconds = typeof durationSecondsOverride === 'number' && Number.isFinite(durationSecondsOverride)
-      ? durationSecondsOverride
-      : elapsedSeconds;
+    const durationSeconds = typeof durationSecondsOverride === 'number' && Number.isFinite(durationSecondsOverride) ? durationSecondsOverride : elapsedSeconds;
     const durationMins = Math.max(1, Math.floor(durationSeconds / 60));
     const newId = Date.now();
     recordListenUsage(durationSeconds);
-
     const draft = {
-      id: newId,
-      title: 'AI Processing...',
-      summary: 'Analyzing meeting dynamics...',
-      mom: 'Generating professional minutes...',
-      tasks: [],
+      id: newId, title: 'AI Processing...', summary: 'Analyzing meeting dynamics...', mom: 'Generating professional minutes...', tasks: [],
       date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
       time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-      duration: `${durationMins}m`,
-      transcript: 'Transcribing meeting...',
-      audioUrl: localAudioUrl,
-      source: 'listen',
+      duration: `${durationMins}m`, transcript: 'Transcribing meeting...', audioUrl: localAudioUrl, source: 'listen',
     };
-
-    onSaveDraft(draft);
-    onClose();
-
+    onSaveDraft(draft); onClose();
     (async () => {
-      let finalTextTranscript = 'No audio captured.';
-      try {
-        if (audioBlob) {
-          finalTextTranscript = (await processSTTWithAzure(audioBlob)) || 'No speech detected.';
-        }
-      } catch (apiError) { finalTextTranscript = 'Transcription error.'; }
-
-      updateNote(newId, { transcript: finalTextTranscript });
-      if (finalTextTranscript.includes('error') || finalTextTranscript === 'No speech detected.') {
-        updateNote(newId, { title: 'Empty Recording', summary: 'No content to analyze.', callStatus: 'no-response' });
-        return;
-      }
-
-      const forAi = finalTextTranscript.length > MAX_TRANSCRIPT_FOR_AI ? finalTextTranscript.slice(0, MAX_TRANSCRIPT_FOR_AI) : finalTextTranscript;
-
+      let finalText = 'No audio captured.';
+      try { if (audioBlob) finalText = (await processSTTWithAzure(audioBlob)) || 'No speech detected.'; } catch { finalText = 'Transcription error.'; }
+      updateNote(newId, { transcript: finalText });
+      if (finalText.includes('error') || finalText === 'No speech detected.') { updateNote(newId, { title: 'Empty Recording', summary: 'No content to analyze.', callStatus: 'no-response' }); return; }
+      const forAi = finalText.length > MAX_TRANSCRIPT_FOR_AI ? finalText.slice(0, MAX_TRANSCRIPT_FOR_AI) : finalText;
       try {
         const aiResult = await getAIResponse(MOM_JSON_INSTRUCTIONS + forAi, [], true);
         const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const p = JSON.parse(jsonMatch[0]);
-          const formattedTasks = (p.tasks || []).map((t, i) => ({
-            id: newId + i + 1,
-            text: t.text,
-            done: false,
-            date: t.date,
-            priority: t.priority,
-            assignee: t.assignee
-          }));
-
-          updateNote(newId, {
-            title: p.mom?.title || 'Recorded Meeting',
-            summaryShort: p.summary_short,
-            summaryDetailed: p.summary_detailed,
-            summary: p.summary_short || p.summary_detailed,
-            detailedMom: p.mom,
-            mom: p.mom?.discussion?.join('\n') || 'No clear discussion points.',
-            tasks: formattedTasks,
-            keywords: p.keywords,
-            sentiment: p.sentiment,
-            diarization: p.diarization,
-            callStatus: p.call_status || 'completed'
-          });
-
-          if (typeof scheduleFromNote === 'function' && p.mom?.title) {
-            scheduleFromNote({ ...draft, transcript: finalTextTranscript, mom: p.mom?.discussion?.join('\n') }, finalTextTranscript);
-          }
+          const formattedTasks = (p.tasks || []).map((t, i) => ({ id: newId + i + 1, text: t.text, done: false, date: t.date, priority: t.priority, assignee: t.assignee }));
+          updateNote(newId, { title: p.mom?.title || 'Recorded Meeting', summaryShort: p.summary_short, summaryDetailed: p.summary_detailed, summary: p.summary_short || p.summary_detailed, detailedMom: p.mom, mom: p.mom?.discussion?.join('\n') || 'No clear discussion points.', tasks: formattedTasks, keywords: p.keywords, sentiment: p.sentiment, diarization: p.diarization, callStatus: p.call_status || 'completed' });
+          if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote({ ...draft, transcript: finalText, mom: p.mom?.discussion?.join('\n') }, finalText);
         }
-      } catch (e) {
-        console.error('Listen extraction failed:', e);
-        updateNote(newId, { summary: 'Analysis failed.', callStatus: 'dropped' });
-      }
+      } catch (e) { console.error('Listen extraction failed:', e); updateNote(newId, { summary: 'Analysis failed.', callStatus: 'dropped' }); }
     })();
   };
 
   const handleStop = async () => {
-    let localAudioUrl = null;
-    let audioBlob = null;
-    if (recorderRef.current && recorderRef.current.isRecording) {
-      try {
-        audioBlob = await recorderRef.current.stop();
-        localAudioUrl = URL.createObjectURL(audioBlob);
-      } catch (err) { console.error('Audio encoding failed:', err); }
+    let localAudioUrl = null, audioBlob = null;
+    if (recorderRef.current?.isRecording) {
+      try { audioBlob = await recorderRef.current.stop(); localAudioUrl = URL.createObjectURL(audioBlob); } catch (err) { console.error(err); }
     }
     await processAudioToNote(audioBlob, localAudioUrl, elapsedSeconds);
   };
 
-  const handlePickFile = () => {
-    if (fileInputRef.current) fileInputRef.current.click();
-  };
+  const handlePickFile = () => { if (fileInputRef.current) fileInputRef.current.click(); };
 
   const handleFileSelected = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
+    const file = e.target.files?.[0]; e.target.value = '';
     if (!file) return;
-
-    if (recorderRef.current && recorderRef.current.isRecording) {
-      try { await recorderRef.current.stop(); } catch (err) { }
-    }
-
+    if (recorderRef.current?.isRecording) { try { await recorderRef.current.stop(); } catch { } }
     const localAudioUrl = URL.createObjectURL(file);
     let durationSeconds = 0;
-    try {
-      durationSeconds = await getBlobDurationSeconds(file);
-    } catch (err) { }
+    try { durationSeconds = await getBlobDurationSeconds(file); } catch { }
     await processAudioToNote(file, localAudioUrl, durationSeconds);
   };
 
   return (
-    <div className="absolute inset-0 bg-slate-950 z-[110] flex flex-col items-center justify-between p-6 text-white animate-slide-bottom overflow-hidden">
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-500 via-emerald-500 to-brand-700 animate-shimmer" />
+    <div style={{
+      position: 'absolute', inset: 0,
+      backgroundColor: '#0a0a0a',
+      zIndex: 110, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'space-between',
+      padding: 24, color: '#fff', overflow: 'hidden',
+      fontFamily: 'system-ui,-apple-system,sans-serif',
+    }}>
+      {/* Top gradient bar */}
+      <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #6d5bfa, #34d399, #9b5de5)' }} />
 
-      <div className="w-full flex justify-between items-center mt-8">
-        <div className="bg-slate-900 px-4 py-2 rounded-2xl text-[10px] font-black tracking-widest flex items-center gap-2 border border-white/10 shadow-xl">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse shadow-lg shadow-red-500/50" />
-          ELITE MEETING CAPTURE
+      {/* Header */}
+      <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 32 }}>
+        <div style={{ backgroundColor: '#161616', border: '1px solid #2a2a2a', padding: '8px 16px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#ef4444', boxShadow: '0 0 10px rgba(239,68,68,0.5)' }} />
+          <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#f3f4f6' }}>Elite Meeting Capture</span>
         </div>
-        <button onClick={onClose} className="p-3 text-white/40 hover:text-white transition-all rounded-full hover:bg-white/5 active:scale-90">
+        <button onClick={onClose} style={{ padding: 12, color: 'rgba(255,255,255,0.4)', background: 'none', border: 'none', cursor: 'pointer' }}>
           <ChevronLeft size={24} />
         </button>
       </div>
 
-      <div className="flex flex-col items-center flex-1 justify-center w-full">
-        <div className="relative flex items-center justify-center mb-16">
-          <div className="absolute w-64 h-64 bg-brand-500 rounded-full animate-ping opacity-10" />
-          <div className="absolute w-44 h-44 bg-brand-600 rounded-full animate-pulse opacity-20 scale-125" />
-          <div className="relative z-10 w-32 h-32 bg-slate-900 border-4 border-white/10 rounded-full flex items-center justify-center shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)]">
-            <Mic size={48} className="text-brand-400" />
+      {/* Center */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1, justifyContent: 'center', width: '100%' }}>
+        {/* Pulse rings */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 56 }}>
+          <div style={{ position: 'absolute', width: 200, height: 200, borderRadius: '50%', backgroundColor: 'rgba(109,91,250,0.06)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite' }} />
+          <div style={{ position: 'absolute', width: 150, height: 150, borderRadius: '50%', backgroundColor: 'rgba(109,91,250,0.08)' }} />
+          <div style={{ position: 'relative', zIndex: 10, width: 120, height: 120, backgroundColor: '#161616', border: '3px solid #2a2a2a', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 50px rgba(109,91,250,0.2)' }}>
+            <Mic size={48} style={{ color: '#a78bfa' }} />
           </div>
         </div>
 
-        <div className="mb-8 flex flex-col items-center gap-2">
-          <span className="text-4xl font-mono font-black text-white tracking-widest">{formatTime(elapsedSeconds)}</span>
-          <div className="h-1 w-12 bg-brand-500 rounded-full" />
+        {/* Timer */}
+        <div style={{ marginBottom: 28, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 40, fontFamily: 'monospace', fontWeight: 900, color: '#f9fafb', letterSpacing: '0.1em' }}>{formatTime(elapsedSeconds)}</span>
+          <div style={{ height: 3, width: 40, background: 'linear-gradient(90deg, #6d5bfa, #9b5de5)', borderRadius: 99 }} />
         </div>
 
-        <div className="max-w-md w-full text-center px-4">
-          <p className="text-brand-400 text-[10px] font-black uppercase tracking-[0.3em] mb-3">Live Intelligence</p>
-          <p className="text-xl font-bold text-white/90 leading-snug tracking-tight">"{transcript}"</p>
+        {/* Transcript */}
+        <div style={{ maxWidth: 340, width: '100%', textAlign: 'center', padding: '0 16px' }}>
+          <p style={{ fontSize: 10, fontWeight: 800, color: '#6d5bfa', textTransform: 'uppercase', letterSpacing: '0.3em', marginBottom: 10 }}>Live Intelligence</p>
+          <p style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.85)', lineHeight: 1.4 }}>"{transcript}"</p>
         </div>
       </div>
 
-      <div className="w-full space-y-4 mb-8">
-        <p className="text-[11px] text-slate-500 text-center font-medium uppercase tracking-wider px-6 opacity-60">
+      {/* Bottom Actions */}
+      <div style={{ width: '100%', marginBottom: 12 }}>
+        <p style={{ fontSize: 11, color: '#374151', textAlign: 'center', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 16, opacity: 0.6 }}>
           Professional MOM and analysis will be generated post-meeting.
         </p>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="audio/*"
-          className="hidden"
-          onChange={handleFileSelected}
-        />
+        <input ref={fileInputRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleFileSelected} />
         <button
           onClick={handlePickFile}
-          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black uppercase tracking-[0.15em] py-4 rounded-[24px] flex items-center justify-center gap-3 active:scale-95 transition-all border border-white/10"
+          style={{ width: '100%', backgroundColor: '#161616', border: '1px solid #2a2a2a', color: '#f3f4f6', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', fontSize: 12, padding: '16px', borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', marginBottom: 12 }}
         >
-          <Upload size={18} /> Upload Audio File
+          <Upload size={17} /> Upload Audio File
         </button>
         <button
           onClick={handleStop}
-          className="w-full bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-[0.15em] py-5 rounded-[24px] flex items-center justify-center gap-3 active:scale-95 transition-all shadow-2xl shadow-red-900/40 border border-red-500/50"
+          style={{ width: '100%', backgroundColor: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', color: '#fff', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', fontSize: 13, padding: '18px', borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, cursor: 'pointer', boxShadow: '0 8px 24px rgba(239,68,68,0.3)' }}
         >
-          <Square fill="currentColor" size={18} /> Finish Meeting
+          <Square fill="currentColor" size={17} /> Finish Meeting
         </button>
       </div>
     </div>

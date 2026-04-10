@@ -2,78 +2,84 @@ import React from 'react';
 import { Home, LayoutGrid, MessageSquare, User, Mic, History, ShieldCheck, Settings } from 'lucide-react';
 
 export default function BottomNav({ currentTab, onTabChange, onActionClick, userRole = 'user' }) {
+  const navStyle = {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+    display: 'flex',
+    justifyContent: 'center',
+    paddingBottom: 28,
+    paddingLeft: 24,
+    paddingRight: 24,
+    pointerEvents: 'none',
+  };
+
+  const pillStyle = {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: 'rgba(20,20,20,0.92)',
+    backdropFilter: 'blur(20px)',
+    borderRadius: 32,
+    border: '1px solid rgba(255,255,255,0.07)',
+    boxShadow: '0 20px 50px rgba(0,0,0,0.5)',
+    padding: 8,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    pointerEvents: 'auto',
+  };
+
   if (userRole === 'admin') {
     return (
-      <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pb-8 px-6 pointer-events-none">
-        <div className="w-full max-w-sm bg-white/80 backdrop-blur-2xl rounded-[32px] border border-white/40 shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-2 flex items-center justify-around pointer-events-auto">
-          <NavButton 
-            active={currentTab === 'dashboard'} 
-            onClick={() => onTabChange('dashboard')} 
-            icon={<ShieldCheck size={20} />} 
-            label="Nexus" 
-          />
-          <NavButton 
-            active={currentTab === 'transactions'} 
-            onClick={() => onTabChange('transactions')} 
-            icon={<History size={20} />} 
-            label="Ledger" 
-          />
-          <NavButton 
-            active={currentTab === 'management'} 
-            onClick={() => onTabChange('management')} 
-            icon={<Settings size={20} />} 
-            label="Manage" 
-          />
-          <NavButton 
-            active={currentTab === 'profile'} 
-            onClick={() => onTabChange('profile')} 
-            icon={<User size={20} />} 
-            label="Admin" 
-          />
+      <div style={navStyle}>
+        <div style={pillStyle}>
+          <NavButton active={currentTab === 'dashboard'} onClick={() => onTabChange('dashboard')} icon={<ShieldCheck size={20} />} label="Nexus" />
+          <NavButton active={currentTab === 'transactions'} onClick={() => onTabChange('transactions')} icon={<History size={20} />} label="Ledger" />
+          <NavButton active={currentTab === 'management'} onClick={() => onTabChange('management')} icon={<Settings size={20} />} label="Manage" />
+          <NavButton active={currentTab === 'profile'} onClick={() => onTabChange('profile')} icon={<User size={20} />} label="Admin" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center pb-8 px-6 pointer-events-none">
-      <div className="w-full max-w-sm bg-white/80 backdrop-blur-2xl rounded-[32px] border border-white/40 shadow-[0_20px_50px_rgba(0,0,0,0.15)] p-2 flex items-center justify-between pointer-events-auto">
-        <div className="flex items-center justify-around flex-1">
-          <NavButton 
-            active={currentTab === 'dashboard'} 
-            onClick={() => onTabChange('dashboard')} 
-            icon={<Home size={20} />} 
-            label="Home" 
-          />
-          <NavButton 
-            active={currentTab === 'locker'} 
-            onClick={() => onTabChange('locker')} 
-            icon={<LayoutGrid size={20} />} 
-            label="Locker" 
-          />
+    <div style={navStyle}>
+      <div style={{ ...pillStyle, justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flex: 1 }}>
+          <NavButton active={currentTab === 'dashboard'} onClick={() => onTabChange('dashboard')} icon={<Home size={20} />} label="Home" />
+          <NavButton active={currentTab === 'locker'} onClick={() => onTabChange('locker')} icon={<LayoutGrid size={20} />} label="Locker" />
         </div>
 
-        {/* Floating Action Button for regular users */}
+        {/* FAB */}
         <button
           onClick={onActionClick}
-          className="relative -top-1 w-14 h-14 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-[0_10px_25px_rgba(79,70,229,0.4)] active:scale-90 transition-all hover:bg-brand-700 mx-2 ring-4 ring-white"
+          style={{
+            position: 'relative',
+            top: -4,
+            width: 56,
+            height: 56,
+            background: 'linear-gradient(135deg, #6d5bfa 0%, #9b5de5 100%)',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            boxShadow: '0 8px 24px rgba(109,91,250,0.5)',
+            border: '3px solid #111111',
+            cursor: 'pointer',
+            flexShrink: 0,
+            marginLeft: 8,
+            marginRight: 8,
+          }}
         >
-          <Mic size={24} fill="currentColor" />
+          <Mic size={22} fill="currentColor" />
         </button>
 
-        <div className="flex items-center justify-around flex-1">
-          <NavButton 
-            active={currentTab === 'activity'} 
-            onClick={() => onTabChange('activity')} 
-            icon={<MessageSquare size={20} />} 
-            label="Activity" 
-          />
-          <NavButton 
-            active={currentTab === 'profile'} 
-            onClick={() => onTabChange('profile')} 
-            icon={<User size={20} />} 
-            label="Profile" 
-          />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flex: 1 }}>
+          <NavButton active={currentTab === 'activity'} onClick={() => onTabChange('activity')} icon={<MessageSquare size={20} />} label="Activity" />
+          <NavButton active={currentTab === 'profile'} onClick={() => onTabChange('profile')} icon={<User size={20} />} label="Profile" />
         </div>
       </div>
     </div>
@@ -84,16 +90,24 @@ function NavButton({ active, onClick, icon, label }) {
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 py-2 px-4 rounded-2xl transition-all duration-300 ${
-        active 
-          ? 'text-brand-600 bg-brand-50/50' 
-          : 'text-slate-400 hover:text-slate-600'
-      }`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 4,
+        padding: '8px 14px',
+        borderRadius: 20,
+        border: 'none',
+        cursor: 'pointer',
+        backgroundColor: active ? 'rgba(109,91,250,0.15)' : 'transparent',
+        color: active ? '#a78bfa' : '#4b5563',
+        transition: 'all 0.2s',
+      }}
     >
-      <div className={`${active ? 'scale-110' : 'scale-100'} transition-transform duration-300`}>
+      <div style={{ transform: active ? 'scale(1.1)' : 'scale(1)', transition: 'transform 0.2s' }}>
         {icon}
       </div>
-      <span className="text-[10px] font-bold tracking-tight">{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.02em' }}>{label}</span>
     </button>
   );
 }

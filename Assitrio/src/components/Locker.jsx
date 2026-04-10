@@ -1,165 +1,85 @@
 import React, { useState, useRef, useEffect } from 'react';
-import {
-  Archive,
-  CheckCircle2,
-  Circle,
-  ChevronRight,
-  Calendar,
-  Clock,
-  Trash2,
-  Pencil,
-  Check,
-  X,
-  Search,
-  Filter,
-  FileText,
-  Mic,
-  MessageCircle,
-  Flag,
-  Mail,
-  Users
-} from 'lucide-react';
+import { Archive, CheckCircle2, Circle, ChevronRight, Calendar, Clock, Trash2, Pencil, Check, X, Search, Filter, FileText, Mic, MessageCircle, Flag, Mail, Users } from 'lucide-react';
+
+const dk = {
+  root: { padding: '20px 16px 100px', backgroundColor: '#111111', minHeight: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' },
+  title: { fontSize: 22, fontWeight: 800, color: '#f9fafb', letterSpacing: '-0.3px', paddingTop: 24, marginBottom: 20 },
+  toggleGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
+  toggleBtn: (active) => ({ padding: 16, borderRadius: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, border: `2px solid ${active ? '#6d5bfa' : '#222'}`, backgroundColor: active ? 'rgba(109,91,250,0.08)' : '#1a1a1a', cursor: 'pointer' }),
+  toggleIcon: (active) => ({ padding: 10, borderRadius: 12, backgroundColor: active ? 'rgba(109,91,250,0.2)' : '#222', color: active ? '#a78bfa' : '#4b5563' }),
+  toggleLabel: (active) => ({ fontSize: 12, fontWeight: 700, color: active ? '#a78bfa' : '#6b7280' }),
+  toggleCount: { fontSize: 10, color: '#4b5563', fontWeight: 500 },
+  filterRow: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
+  searchWrap: { position: 'relative', flex: 1, minWidth: 140 },
+  searchIcon: { position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#4b5563', pointerEvents: 'none' },
+  searchInput: { width: '100%', paddingLeft: 36, paddingRight: 14, paddingTop: 10, paddingBottom: 10, backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, fontSize: 13, color: '#f3f4f6', outline: 'none', boxSizing: 'border-box' },
+  filterSelect: { paddingLeft: 36, paddingRight: 14, paddingTop: 10, paddingBottom: 10, backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, fontSize: 13, color: '#9ca3af', outline: 'none', appearance: 'none', position: 'relative' },
+  filterWrap: { position: 'relative' },
+  filterIconAbs: { position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#4b5563', pointerEvents: 'none', zIndex: 1 },
+  sectionLabel: { fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  badge: (color) => ({ fontSize: 10, fontWeight: 700, backgroundColor: color === 'amber' ? 'rgba(245,158,11,0.1)' : 'transparent', color: color === 'amber' ? '#f59e0b' : '#34d399', border: `1px solid ${color === 'amber' ? 'rgba(245,158,11,0.2)' : 'transparent'}`, borderRadius: 99, padding: '2px 8px' }),
+  noteCard: { backgroundColor: '#1a1a1a', border: '1px solid #222', borderRadius: 16, padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: 8 },
+  noteTitle: { fontSize: 13, fontWeight: 700, color: '#f3f4f6', marginBottom: 4 },
+  noteMeta: { display: 'flex', gap: 8, fontSize: 10, color: '#4b5563', fontWeight: 500, flexWrap: 'wrap', alignItems: 'center' },
+  taskCard: (completed, editing) => ({ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '14px', borderRadius: 16, border: `${editing ? '2px solid #6d5bfa' : '1px solid #222'}`, backgroundColor: completed ? '#161616' : '#1a1a1a', cursor: editing ? 'default' : 'pointer', marginBottom: 8 }),
+  taskText: (completed) => ({ fontSize: 13, fontWeight: 500, color: completed ? '#4b5563' : '#f3f4f6', textDecoration: completed ? 'line-through' : 'none' }),
+  chip: (bg, color, border) => ({ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 700, backgroundColor: bg, color, border: `1px solid ${border}`, borderRadius: 99, padding: '3px 7px' }),
+  editInput: { flex: 1, fontSize: 13, fontWeight: 500, color: '#f3f4f6', backgroundColor: 'transparent', border: 'none', outline: 'none' },
+  editActions: { display: 'flex', gap: 8, marginTop: 10, paddingTop: 10, borderTop: '1px solid #2a2a2a' },
+  editBtn: (primary) => ({ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 8, border: 'none', cursor: 'pointer', backgroundColor: primary ? 'rgba(109,91,250,0.15)' : '#222', color: primary ? '#a78bfa' : '#6b7280' }),
+  actionBtn: (danger) => ({ padding: 6, borderRadius: 8, border: 'none', cursor: 'pointer', backgroundColor: 'transparent', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center' }),
+  emptyBox: { backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: '32px 24px', textAlign: 'center' },
+};
 
 export default function Locker({ notes = [], pendingTasks = [], completedTasks = [], toggleTask, openNote, deleteNote, deleteTask, updateTask }) {
   const [view, setView] = useState('notes');
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
-  
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskValue, setEditTaskValue] = useState('');
   const editRef = useRef(null);
 
-  useEffect(() => {
-    if (editingTaskId && editRef.current) editRef.current.focus();
-  }, [editingTaskId]);
+  useEffect(() => { if (editingTaskId && editRef.current) editRef.current.focus(); }, [editingTaskId]);
 
-  const startTaskEdit = (task) => {
-    setEditingTaskId(task.id);
-    setEditTaskValue(task.text);
-  };
-
-  const saveTaskEdit = (noteId) => {
-    if (editingTaskId && editTaskValue.trim()) {
-      updateTask(noteId, editingTaskId, editTaskValue.trim());
-    }
-    setEditingTaskId(null);
-    setEditTaskValue('');
-  };
-
-  const cancelTaskEdit = () => {
-    setEditingTaskId(null);
-    setEditTaskValue('');
-  };
+  const startTaskEdit = (task) => { setEditingTaskId(task.id); setEditTaskValue(task.text); };
+  const saveTaskEdit = (noteId) => { if (editingTaskId && editTaskValue.trim()) updateTask(noteId, editingTaskId, editTaskValue.trim()); setEditingTaskId(null); setEditTaskValue(''); };
+  const cancelTaskEdit = () => { setEditingTaskId(null); setEditTaskValue(''); };
 
   const TaskCard = ({ task, isCompleted = false }) => {
     const isEditing = editingTaskId === task.id;
-
     return (
-      <div
-        key={task.id}
-        onClick={() => !isEditing && openNote(task.noteId)}
-        className={`flex items-start gap-3 p-4 rounded-2xl border transition-all cursor-pointer ${
-          isCompleted
-            ? 'bg-slate-50 border-slate-100 hover:border-slate-200'
-            : 'bg-white border-slate-100 shadow-sm hover:border-brand-200 hover:shadow-md active:scale-[0.98]'
-        } ${isEditing ? 'border-brand-400 border-2 cursor-default' : ''}`}
-      >
+      <div style={dk.taskCard(isCompleted, isEditing)} onClick={() => !isEditing && openNote(task.noteId)}>
         {isEditing ? (
-          <div className="flex-1">
-            <input
-              ref={editRef}
-              value={editTaskValue}
-              onChange={(e) => setEditTaskValue(e.target.value)}
+          <div style={{ flex: 1 }}>
+            <input ref={editRef} value={editTaskValue} onChange={(e) => setEditTaskValue(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') saveTaskEdit(task.noteId); if (e.key === 'Escape') cancelTaskEdit(); }}
-              className="w-full text-[13px] font-medium text-slate-800 bg-transparent outline-none"
-            />
-            <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
-              <button
-                onClick={(e) => { e.stopPropagation(); saveTaskEdit(task.noteId); }}
-                className="flex items-center gap-1 text-[11px] font-bold text-brand-600 bg-brand-50 px-2.5 py-1 rounded-lg hover:bg-brand-100"
-              >
-                <Check size={12} /> Save
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); cancelTaskEdit(); }}
-                className="flex items-center gap-1 text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg hover:bg-slate-200"
-              >
-                <X size={12} /> Cancel
-              </button>
+              style={dk.editInput} />
+            <div style={dk.editActions}>
+              <button onClick={(e) => { e.stopPropagation(); saveTaskEdit(task.noteId); }} style={dk.editBtn(true)}><Check size={12} /> Save</button>
+              <button onClick={(e) => { e.stopPropagation(); cancelTaskEdit(); }} style={dk.editBtn(false)}><X size={12} /> Cancel</button>
             </div>
           </div>
         ) : (
           <>
-            <button
-              onClick={(e) => { e.stopPropagation(); toggleTask(task.noteId, task.id); }}
-              className={`mt-0.5 shrink-0 transition-colors ${
-                isCompleted ? 'text-emerald-500' : 'text-slate-300 hover:text-brand-500'
-              }`}
-              aria-label={isCompleted ? `Uncomplete: ${task.text}` : `Complete: ${task.text}`}
-            >
+            <button onClick={(e) => { e.stopPropagation(); toggleTask(task.noteId, task.id); }} style={{ ...dk.actionBtn(), color: isCompleted ? '#34d399' : '#374151', marginTop: 2, flexShrink: 0 }}>
               {isCompleted ? <CheckCircle2 size={18} /> : <Circle size={18} />}
             </button>
-            <div className="flex-1 min-w-0">
-              <p className={`text-[13px] font-medium ${isCompleted ? 'text-slate-500 line-through' : 'text-slate-800'}`}>
-                {task.text}
-              </p>
-              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                {task.date && (
-                  <div
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      isCompleted
-                        ? 'bg-slate-50 text-slate-400'
-                        : 'bg-brand-50 text-brand-600'
-                    }`}
-                  >
-                    <Calendar size={10} />
-                    {task.date}
-                  </div>
-                )}
-                {task.priority && task.priority !== 'Normal' && !isCompleted && (
-                  <span className={`inline-flex items-center gap-0.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full ${
-                    task.priority === 'Critical'
-                      ? 'bg-red-50 text-red-600 border border-red-200'
-                      : 'bg-amber-50 text-amber-600 border border-amber-200'
-                  }`}>
-                    <Flag size={7} />
-                    {task.priority}
-                  </span>
-                )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={dk.taskText(isCompleted)}>{task.text}</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 7 }}>
+                {task.date && <span style={dk.chip('rgba(109,91,250,0.1)', isCompleted ? '#4b5563' : '#8b5cf6', 'rgba(109,91,250,0.2)')}><Calendar size={9} />{task.date}</span>}
+                {task.priority && task.priority !== 'Normal' && !isCompleted && <span style={dk.chip('rgba(239,68,68,0.1)', '#f87171', 'rgba(239,68,68,0.2)')}><Flag size={7} />{task.priority}</span>}
+                {task.assignee && <span style={dk.chip('rgba(167,139,250,0.1)', isCompleted ? '#4b5563' : '#a78bfa', 'rgba(167,139,250,0.2)')}><Mail size={8} />{task.assignee.split('@')[0]}</span>}
               </div>
-              {task.assignee && (
-                <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold mt-1 ${
-                  isCompleted ? 'bg-slate-50 text-slate-400' : 'bg-violet-50 text-violet-600 border border-violet-200'
-                }`}>
-                  <Mail size={8} />
-                  {task.assignee.split('@')[0]}
-                </div>
-              )}
-              <div className="flex items-center gap-2 mt-1.5">
-                <p className="text-[11px] text-slate-400 line-clamp-1 flex items-center gap-1">
-                  <FileText size={10} className="shrink-0" />
-                  {task.noteTitle}
-                </p>
-                <ChevronRight size={14} className="text-slate-300 shrink-0" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: '#4b5563' }}>
+                <FileText size={10} style={{ flexShrink: 0 }} />{task.noteTitle}
+                <ChevronRight size={12} style={{ color: '#2a2a2a' }} />
               </div>
             </div>
-            {/* Edit/Delete */}
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                onClick={(e) => { e.stopPropagation(); startTaskEdit(task); }}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-brand-500 hover:bg-brand-50 transition-all"
-                aria-label={`Edit task: ${task.text}`}
-              >
-                <Pencil size={13} />
-              </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteTask(task.noteId, task.id); }}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
-                aria-label={`Delete task: ${task.text}`}
-              >
-                <Trash2 size={13} />
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              <button onClick={(e) => { e.stopPropagation(); startTaskEdit(task); }} style={{ ...dk.actionBtn(), color: '#374151' }}><Pencil size={13} /></button>
+              <button onClick={(e) => { e.stopPropagation(); deleteTask(task.noteId, task.id); }} style={{ ...dk.actionBtn(), color: '#374151' }}><Trash2 size={13} /></button>
             </div>
           </>
         )}
@@ -167,251 +87,112 @@ export default function Locker({ notes = [], pendingTasks = [], completedTasks =
     );
   };
 
-
-
-  // Filter Logic
-  const getFilteredItems = (items) => {
-    return items.filter(item => {
-      const q = searchQuery.toLowerCase();
-      const matchesSearch = searchQuery === '' || 
-        (item.title && item.title.toLowerCase().includes(q)) ||
-        (item.summary && item.summary.toLowerCase().includes(q)) ||
-        (item.text && item.text.toLowerCase().includes(q)) ||
-        (item.transcript && item.transcript.toLowerCase().includes(q)) ||
-        (item.mom && item.mom.toLowerCase().includes(q));
-
-      let matchesDate = true;
-      if (dateFilter !== 'all') {
-        const itemDateStr = item.date || item.noteDate; 
-        const todayStr = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-        const yesterdayDate = new Date();
-        yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-        const yesterdayStr = yesterdayDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-
-        const testDate = itemDateStr === 'Today' ? todayStr : itemDateStr === 'Yesterday' ? yesterdayStr : itemDateStr;
-        
-        if (dateFilter === 'today') {
-           matchesDate = testDate === todayStr || itemDateStr === 'Today';
-        } else if (dateFilter === 'yesterday') {
-           matchesDate = testDate === yesterdayStr || itemDateStr === 'Yesterday';
-        }
-      }
-      return matchesSearch && matchesDate;
-    });
-  };
-
-  const prepTasks = (tasks) => tasks.map(t => {
-    const parentNote = notes.find(n => n.id === t.noteId);
-    return { ...t, noteDate: parentNote ? parentNote.date : 'Today' };
+  const getFilteredItems = (items) => items.filter(item => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = searchQuery === '' || ['title', 'summary', 'text', 'transcript', 'mom'].some(k => item[k]?.toLowerCase().includes(q));
+    let matchesDate = true;
+    if (dateFilter !== 'all') {
+      const todayStr = new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+      const yd = new Date(); yd.setDate(yd.getDate() - 1);
+      const ydStr = yd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+      const id = item.date || item.noteDate;
+      const td = id === 'Today' ? todayStr : id === 'Yesterday' ? ydStr : id;
+      if (dateFilter === 'today') matchesDate = td === todayStr || id === 'Today';
+      else if (dateFilter === 'yesterday') matchesDate = td === ydStr || id === 'Yesterday';
+    }
+    return matchesSearch && matchesDate;
   });
 
-  // Build unique assignees for filter dropdown
-  const uniqueAssignees = [...new Set(
-    [...pendingTasks, ...completedTasks]
-      .map(t => t.assignee)
-      .filter(Boolean)
-  )].sort();
-
+  const prepTasks = (tasks) => tasks.map(t => { const pn = notes.find(n => n.id === t.noteId); return { ...t, noteDate: pn?.date || 'Today' }; });
+  const uniqueAssignees = [...new Set([...pendingTasks, ...completedTasks].map(t => t.assignee).filter(Boolean))].sort();
   const filteredNotes = getFilteredItems(notes);
   let filteredPending = getFilteredItems(prepTasks(pendingTasks));
   let filteredCompleted = getFilteredItems(prepTasks(completedTasks));
-
-  // Apply assignee filter
   if (assigneeFilter !== 'all') {
-    if (assigneeFilter === 'unassigned') {
-      filteredPending = filteredPending.filter(t => !t.assignee);
-      filteredCompleted = filteredCompleted.filter(t => !t.assignee);
-    } else {
-      filteredPending = filteredPending.filter(t => t.assignee === assigneeFilter);
-      filteredCompleted = filteredCompleted.filter(t => t.assignee === assigneeFilter);
-    }
+    const fn = t => assigneeFilter === 'unassigned' ? !t.assignee : t.assignee === assigneeFilter;
+    filteredPending = filteredPending.filter(fn);
+    filteredCompleted = filteredCompleted.filter(fn);
   }
 
   return (
-    <div className="p-5 animate-fade-in">
-      <h1 className="text-[22px] font-extrabold mb-5 pt-6 text-slate-900 tracking-tight">Memory Locker</h1>
+    <div style={dk.root}>
+      <h1 style={dk.title}>Memory Locker</h1>
 
-      {/* View Toggle */}
-      <div className="grid grid-cols-2 gap-3 mb-6">
-        <button
-          onClick={() => setView('notes')}
-          className={`p-4 rounded-2xl flex flex-col items-center gap-2.5 border-2 transition-all active:scale-[0.97] ${
-            view === 'notes'
-              ? 'border-brand-600 bg-brand-50 shadow-md'
-              : 'border-slate-150 bg-white hover:border-brand-200'
-          }`}
-        >
-          <div className={`p-2.5 rounded-xl transition-colors ${
-            view === 'notes' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'
-          }`}>
-            <Archive size={22} />
-          </div>
-          <div className="text-center">
-            <span className={`font-bold text-[12px] block ${view === 'notes' ? 'text-brand-700' : 'text-slate-500'}`}>
-              Notes (MOM)
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">{notes.length} entries</span>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setView('tasks')}
-          className={`p-4 rounded-2xl flex flex-col items-center gap-2.5 border-2 transition-all active:scale-[0.97] ${
-            view === 'tasks'
-              ? 'border-brand-600 bg-brand-50 shadow-md'
-              : 'border-slate-150 bg-white hover:border-brand-200'
-          }`}
-        >
-          <div className={`p-2.5 rounded-xl transition-colors ${
-            view === 'tasks' ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-400'
-          }`}>
-            <CheckCircle2 size={22} />
-          </div>
-          <div className="text-center">
-            <span className={`font-bold text-[12px] block ${view === 'tasks' ? 'text-brand-700' : 'text-slate-500'}`}>
-              All Tasks
-            </span>
-            <span className="text-[10px] text-slate-400 font-medium">{filteredPending.length + filteredCompleted.length} items</span>
-          </div>
-        </button>
+      <div style={dk.toggleGrid}>
+        {[{ id: 'notes', Icon: Archive, label: 'Notes (MOM)', count: `${notes.length} entries` }, { id: 'tasks', Icon: CheckCircle2, label: 'All Tasks', count: `${filteredPending.length + filteredCompleted.length} items` }].map(({ id, Icon, label, count }) => (
+          <button key={id} style={dk.toggleBtn(view === id)} onClick={() => setView(id)}>
+            <div style={dk.toggleIcon(view === id)}><Icon size={22} /></div>
+            <div style={{ textAlign: 'center' }}>
+              <span style={dk.toggleLabel(view === id)}>{label}</span>
+              <span style={{ ...dk.toggleCount, display: 'block', marginTop: 2 }}>{count}</span>
+            </div>
+          </button>
+        ))}
       </div>
 
-      {/* Filters (Search & Date & Assignee) */}
-      <div className="flex gap-2 mb-6 flex-wrap">
-        <div className="relative flex-1 min-w-[140px]">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={16} className="text-slate-400" />
-          </div>
-          <input
-            type="text"
-            className="w-full pl-9 pr-4 py-2.5 bg-white border-2 border-slate-100 focus:border-brand-300 rounded-xl text-[13px] outline-none transition-colors placeholder:text-slate-400"
-            placeholder={`Search ${view}...`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      {/* Filters */}
+      <div style={dk.filterRow}>
+        <div style={dk.searchWrap}>
+          <Search size={15} style={dk.searchIcon} />
+          <input type="text" style={dk.searchInput} placeholder={`Search ${view}...`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Filter size={16} className="text-slate-400" />
-          </div>
-          <select
-            className="pl-9 pr-6 py-2.5 bg-white border-2 border-slate-100 focus:border-brand-300 rounded-xl text-[13px] outline-none transition-colors appearance-none font-medium text-slate-700"
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-          >
+        <div style={dk.filterWrap}>
+          <Filter size={15} style={dk.filterIconAbs} />
+          <select style={dk.filterSelect} value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
             <option value="all">All Dates</option>
             <option value="today">Today</option>
             <option value="yesterday">Yesterday</option>
           </select>
         </div>
         {view === 'tasks' && uniqueAssignees.length > 0 && (
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Users size={16} className="text-slate-400" />
-            </div>
-            <select
-              className="pl-9 pr-6 py-2.5 bg-white border-2 border-slate-100 focus:border-brand-300 rounded-xl text-[13px] outline-none transition-colors appearance-none font-medium text-slate-700"
-              value={assigneeFilter}
-              onChange={(e) => setAssigneeFilter(e.target.value)}
-            >
+          <div style={dk.filterWrap}>
+            <Users size={15} style={dk.filterIconAbs} />
+            <select style={dk.filterSelect} value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
               <option value="all">All Assignees</option>
               <option value="unassigned">Unassigned</option>
-              {uniqueAssignees.map(email => (
-                <option key={email} value={email}>{email.split('@')[0]}</option>
-              ))}
+              {uniqueAssignees.map(e => <option key={e} value={e}>{e.split('@')[0]}</option>)}
             </select>
           </div>
         )}
       </div>
 
-      {/* Notes View */}
       {view === 'notes' ? (
-        <div className="space-y-5 animate-slide-up">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em]">Chronological</p>
+        <div>
+          <p style={dk.sectionLabel}>Chronological</p>
           {filteredNotes.length === 0 ? (
-            <div className="bg-white p-8 rounded-2xl border border-slate-100 text-center shadow-sm">
-              <Archive size={32} className="text-slate-200 mx-auto mb-3" />
-              <p className="text-sm font-semibold text-slate-600">No memories found</p>
-            </div>
-          ) : (
-            <div className="space-y-2.5">
-              {filteredNotes.map(note => (
-                <div
-                  key={note.id}
-                  className="bg-white border border-slate-100 p-4 rounded-2xl flex justify-between items-center cursor-pointer shadow-sm hover:shadow-md transition-all active:scale-[0.98] group"
-                >
-                  <div className="flex-1 pr-3 min-w-0" onClick={() => openNote(note.id)}>
-                    <h4 className="font-bold text-slate-800 text-[13px] mb-1 group-hover:text-brand-600 transition-colors truncate">
-                      {note.title}
-                    </h4>
-                    <p className="text-[11px] text-slate-500 line-clamp-1 mb-1.5">{note.summary}</p>
-                    <div className="flex gap-2 text-[10px] text-slate-400 font-medium items-center">
-                      <span className="flex items-center gap-1"><Calendar size={10} /> {note.date}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1"><Clock size={10} /> {note.time}</span>
-                      <span>•</span>
-                      <span className="flex items-center gap-1">
-                        {note.source === 'talk' ? <MessageCircle size={10} /> : <Mic size={10} />}
-                        {note.source === 'talk' ? 'Talk' : 'Listen'}
-                      </span>
-                      <span>•</span>
-                      <span>{note.tasks.filter(t => !t.done).length} pending</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }}
-                      className="p-2 rounded-full text-slate-200 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                      aria-label={`Delete note: ${note.title}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                    <div
-                      onClick={() => openNote(note.id)}
-                      className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-brand-50 transition-colors"
-                    >
-                      <ChevronRight size={16} className="text-slate-300 group-hover:text-brand-600" />
-                    </div>
-                  </div>
+            <div style={dk.emptyBox}><Archive size={28} style={{ color: '#2a2a2a', margin: '0 auto 10px', display: 'block' }} /><p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>No memories found</p></div>
+          ) : filteredNotes.map(note => (
+            <div key={note.id} style={dk.noteCard}>
+              <div style={{ flex: 1, paddingRight: 10, minWidth: 0 }} onClick={() => openNote(note.id)}>
+                <h4 style={dk.noteTitle}>{note.title}</h4>
+                <p style={{ fontSize: 11, color: '#4b5563', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.summary}</p>
+                <div style={dk.noteMeta}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Calendar size={9} />{note.date}</span>
+                  <span>•</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{note.time}</span>
+                  <span>•</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{note.source === 'talk' ? <MessageCircle size={9} /> : <Mic size={9} />}{note.source === 'talk' ? 'Talk' : 'Listen'}</span>
+                  <span>•</span><span>{note.tasks.filter(t => !t.done).length} pending</span>
                 </div>
-              ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                <button onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }} style={{ ...dk.actionBtn(true), padding: 8 }}><Trash2 size={14} style={{ color: '#374151' }} /></button>
+                <div onClick={() => openNote(note.id)} style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                  <ChevronRight size={15} style={{ color: '#4b5563' }} />
+                </div>
+              </div>
             </div>
-          )}
+          ))}
         </div>
       ) : (
-        /* Tasks View */
-        <div className="space-y-5 animate-slide-up">
-          {/* Pending */}
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] flex justify-between items-center mb-3">
-              <span>Pending</span>
-              <span className="bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full text-[10px] font-bold border border-amber-200">
-                {filteredPending.length}
-              </span>
-            </p>
-            {filteredPending.length === 0 ? (
-              <div className="bg-white p-6 rounded-2xl border border-slate-100 text-center shadow-sm">
-                <CheckCircle2 size={28} className="text-emerald-400 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-slate-600">All caught up!</p>
-                <p className="text-xs text-slate-400 mt-0.5">No pending tasks matching your filter.</p>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {filteredPending.map(task => <TaskCard key={task.id} task={task} />)}
-              </div>
-            )}
-          </div>
+        <div>
+          <p style={dk.sectionLabel}><span>Pending</span><span style={dk.badge('amber')}>{filteredPending.length}</span></p>
+          {filteredPending.length === 0 ? (
+            <div style={dk.emptyBox}><CheckCircle2 size={24} style={{ color: '#34d399', margin: '0 auto 8px', display: 'block' }} /><p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>All caught up!</p></div>
+          ) : filteredPending.map(task => <TaskCard key={task.id} task={task} />)}
 
-          {/* Completed */}
           {filteredCompleted.length > 0 && (
-            <div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mb-3 flex justify-between items-center">
-                <span>Completed</span>
-                <span className="text-emerald-500">{filteredCompleted.length}</span>
-              </p>
-              <div className="space-y-2.5 opacity-60">
-                {filteredCompleted.map(task => <TaskCard key={task.id} task={task} isCompleted />)}
-              </div>
+            <div style={{ marginTop: 20, opacity: 0.65 }}>
+              <p style={dk.sectionLabel}><span>Completed</span><span style={dk.badge('green')}>{filteredCompleted.length}</span></p>
+              {filteredCompleted.map(task => <TaskCard key={task.id} task={task} isCompleted />)}
             </div>
           )}
         </div>

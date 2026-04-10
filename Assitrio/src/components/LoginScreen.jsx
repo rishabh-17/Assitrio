@@ -1,11 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Mic, Eye, EyeOff, ArrowRight, UserPlus, LogIn, AlertCircle } from 'lucide-react';
 
-// Google OAuth Client ID — Replace with your real one for production
 const GOOGLE_CLIENT_ID = '832218498414-your-client-id.apps.googleusercontent.com';
 
 export default function LoginScreen({ onLogin, onGoogleLogin }) {
-  const [mode, setMode] = useState('login'); // 'login' | 'signup'
+  const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -13,291 +12,147 @@ export default function LoginScreen({ onLogin, onGoogleLogin }) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-
   const googleBtnRef = useRef(null);
   const gsiInitialized = useRef(false);
 
-  // ── Google Sign-In callback ──
   const handleGoogleResponse = useCallback((response) => {
     if (response?.credential) {
       (async () => {
-        setGoogleLoading(true);
-        setError('');
-        try {
-          const result = await onGoogleLogin(response.credential);
-          if (!result?.success) {
-            setError(result?.error || 'Google sign-in failed');
-          }
-        } finally {
-          setGoogleLoading(false);
-        }
+        setGoogleLoading(true); setError('');
+        try { const r = await onGoogleLogin(response.credential); if (!r?.success) setError(r?.error || 'Google sign-in failed'); }
+        finally { setGoogleLoading(false); }
       })();
     }
   }, [onGoogleLogin]);
 
-  // ── Initialize Google Identity Services ──
   useEffect(() => {
     if (gsiInitialized.current) return;
-
-    const initGoogle = () => {
+    const init = () => {
       if (!window.google?.accounts?.id) return;
       gsiInitialized.current = true;
-
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleResponse,
-        auto_select: false,
-        cancel_on_tap_outside: true,
-      });
-
-      // Render the Google button in our hidden container
-      if (googleBtnRef.current) {
-        window.google.accounts.id.renderButton(googleBtnRef.current, {
-          type: 'standard',
-          theme: 'outline',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'rectangular',
-          width: 320,
-        });
-      }
+      window.google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: handleGoogleResponse, auto_select: false, cancel_on_tap_outside: true });
+      if (googleBtnRef.current) window.google.accounts.id.renderButton(googleBtnRef.current, { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'rectangular', width: 320 });
     };
-
-    // Google's GSI script may still be loading
-    if (window.google?.accounts?.id) {
-      initGoogle();
-    } else {
-      const interval = setInterval(() => {
-        if (window.google?.accounts?.id) {
-          initGoogle();
-          clearInterval(interval);
-        }
-      }, 200);
-      // Clean up after 10 seconds
-      setTimeout(() => clearInterval(interval), 10000);
-    }
+    if (window.google?.accounts?.id) init();
+    else { const iv = setInterval(() => { if (window.google?.accounts?.id) { init(); clearInterval(iv); } }, 200); setTimeout(() => clearInterval(iv), 10000); }
   }, [handleGoogleResponse]);
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!username.trim() || !password.trim()) {
-      setError('Please fill in all fields');
-      return;
-    }
-
-    try {
-      console.log('ASSISTRIO_LOGIN_UI', 'submit', { mode, username: username.trim(), hasDisplayName: !!displayName.trim() });
-    } catch (e) {
-    }
-
+    e.preventDefault(); setError('');
+    if (!username.trim() || !password.trim()) { setError('Please fill in all fields'); return; }
     setIsLoading(true);
-
-    // Simulate brief loading for UX feel
     await new Promise(r => setTimeout(r, 600));
-
     const result = await onLogin(mode, username.trim(), password, displayName.trim());
-
-    if (!result.success) {
-      setError(result.error);
-    }
-
+    if (!result.success) setError(result.error);
     setIsLoading(false);
   };
 
-  const switchMode = () => {
-    setMode(mode === 'login' ? 'signup' : 'login');
-    setError('');
-    setUsername('');
-    setPassword('');
-    setDisplayName('');
+  const switchMode = () => { setMode(m => m === 'login' ? 'signup' : 'login'); setError(''); setUsername(''); setPassword(''); setDisplayName(''); };
+
+  const handleGoogleClick = () => {
+    if (googleBtnRef.current) { const b = googleBtnRef.current.querySelector('[role="button"]') || googleBtnRef.current.querySelector('iframe'); if (b) { b.click(); return; } }
+    window.google?.accounts?.id?.prompt();
   };
 
-  // Trigger the hidden Google button click programmatically
-  const handleGoogleClick = () => {
-    if (googleBtnRef.current) {
-      const btn = googleBtnRef.current.querySelector('[role="button"]') ||
-        googleBtnRef.current.querySelector('div[aria-labelledby]') ||
-        googleBtnRef.current.querySelector('iframe');
-      if (btn) {
-        btn.click();
-        return;
-      }
-    }
-    // Fallback: prompt One Tap
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.prompt();
-    }
+  const inputStyle = {
+    width: '100%', height: 46, backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a',
+    borderRadius: 12, padding: '0 14px', fontSize: 14, color: '#f3f4f6',
+    fontWeight: 500, outline: 'none', boxSizing: 'border-box',
   };
+
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: 8 };
 
   return (
-    <div className="flex justify-center bg-zinc-900 h-screen w-full font-sans">
-      <div className="w-full max-w-md bg-slate-50 h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
+    <div style={{ display: 'flex', justifyContent: 'center', backgroundColor: '#0a0a0a', minHeight: '100vh', width: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+      <div style={{ width: '100%', maxWidth: 440, position: 'relative', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* Background gradient */}
-        <div className="absolute inset-0 bg-gradient-to-b from-brand-600 via-brand-700 to-slate-900 opacity-95" />
+        {/* Gradient background */}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(160deg, #0d0d1a 0%, #111111 50%, #0a0a0a 100%)' }} />
 
-        {/* Decorative circles */}
-        <div className="absolute top-[-80px] right-[-60px] w-64 h-64 bg-white/5 rounded-full" />
-        <div className="absolute bottom-[200px] left-[-40px] w-48 h-48 bg-white/5 rounded-full" />
-        <div className="absolute top-[40%] right-[-20px] w-32 h-32 bg-white/5 rounded-full" />
+        {/* Glow */}
+        <div style={{ position: 'absolute', top: 80, right: -80, width: 300, height: 300, background: 'rgba(109,91,250,0.06)', borderRadius: '50%', filter: 'blur(60px)' }} />
+        <div style={{ position: 'absolute', bottom: 200, left: -60, width: 240, height: 240, background: 'rgba(155,93,229,0.05)', borderRadius: '50%', filter: 'blur(60px)' }} />
 
-        {/* Content */}
-        <div className="relative z-10 flex flex-col h-full px-7 pt-16 pb-8">
+        <div style={{ position: 'relative', zIndex: 10, display: 'flex', flexDirection: 'column', minHeight: '100vh', padding: '60px 28px 32px' }}>
 
-          {/* Logo & Branding */}
-          <div className="flex flex-col items-center mb-10">
-            <div className="w-20 h-20 bg-white/15 backdrop-blur-md rounded-3xl flex items-center justify-center mb-5 shadow-xl border border-white/10">
-              <Mic size={36} className="text-white" />
+          {/* Logo */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 36 }}>
+            <div style={{ width: 76, height: 76, background: 'rgba(109,91,250,0.15)', border: '1px solid rgba(109,91,250,0.25)', borderRadius: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20, boxShadow: '0 8px 32px rgba(109,91,250,0.2)' }}>
+              <Mic size={34} style={{ color: '#a78bfa' }} />
             </div>
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">Assistrio</h1>
-            <p className="text-brand-200 text-sm font-medium mt-2 text-center">
-              AI Memory for Real-World Conversations
-            </p>
+            <h1 style={{ fontSize: 28, fontWeight: 800, color: '#f9fafb', letterSpacing: '-0.3px', margin: '0 0 8px' }}>Assistrio</h1>
+            <p style={{ fontSize: 13, color: '#4b5563', fontWeight: 500, margin: 0, textAlign: 'center' }}>AI Memory for Real-World Conversations</p>
           </div>
 
-          {/* Form Card */}
-          <div className="bg-white rounded-3xl p-6 shadow-2xl flex-1 flex flex-col overflow-y-auto scrollbar-hide">
-            <h2 className="text-xl font-extrabold text-slate-900 mb-1">
-              {mode === 'login' ? 'Welcome back' : 'Create account'}
-            </h2>
-            <p className="text-sm text-slate-400 mb-5">
-              {mode === 'login' ? 'Sign in to access your memories' : 'Get started with Assistrio'}
-            </p>
+          {/* Card */}
+          <div style={{ backgroundColor: '#161616', borderRadius: 24, border: '1px solid #1f1f1f', padding: '28px 24px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f9fafb', margin: '0 0 6px' }}>{mode === 'login' ? 'Welcome back' : 'Create account'}</h2>
+            <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 24px' }}>{mode === 'login' ? 'Sign in to access your memories' : 'Get started with Assistrio'}</p>
 
-            {/* Google Sign In Button */}
-            <button
-              type="button"
-              onClick={handleGoogleClick}
-              disabled={googleLoading}
-              className="w-full h-12 rounded-xl font-bold text-[14px] flex items-center justify-center gap-3 transition-all mb-4 bg-white border-2 border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50 active:scale-[0.97] shadow-sm hover:shadow-md"
-              id="google-signin-button"
-            >
-              {googleLoading ? (
-                <div className="w-5 h-5 border-2 border-slate-300 border-t-brand-500 rounded-full animate-spin" />
-              ) : (
+            {/* Google button */}
+            <button type="button" onClick={handleGoogleClick} disabled={googleLoading} style={{ width: '100%', height: 46, borderRadius: 12, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 20, backgroundColor: '#1e1e1e', border: '1px solid #2a2a2a', color: '#d1d5db', cursor: 'pointer' }}>
+              {googleLoading ? <div style={{ width: 20, height: 20, border: '2px solid #2a2a2a', borderTopColor: '#8b5cf6', borderRadius: '50%' }} /> : (
                 <>
-                  {/* Google "G" logo SVG */}
-                  <svg width="20" height="20" viewBox="0 0 48 48">
-                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" />
-                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" />
-                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" />
-                  </svg>
-                  <span>Continue with Google</span>
+                  <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" /><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z" /><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z" /><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z" /></svg>
+                  Continue with Google
                 </>
               )}
             </button>
-
-            {/* Hidden Google rendered button (needed for GSI to work) */}
-            <div ref={googleBtnRef} className="hidden" />
+            <div ref={googleBtnRef} style={{ display: 'none' }} />
 
             {/* Divider */}
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 h-px bg-slate-200" />
-              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">or</span>
-              <div className="flex-1 h-px bg-slate-200" />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+              <div style={{ flex: 1, height: 1, backgroundColor: '#222' }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.1em' }}>or</span>
+              <div style={{ flex: 1, height: 1, backgroundColor: '#222' }} />
             </div>
 
-            <form onSubmit={handleSubmit} className="flex flex-col flex-1">
-              {/* Display Name (signup only) */}
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
               {mode === 'signup' && (
-                <div className="mb-3">
-                  <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Display Name</label>
-                  <input
-                    type="text"
-                    value={displayName}
-                    onChange={(e) => setDisplayName(e.target.value)}
-                    placeholder="Your name"
-                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-[14px] text-slate-800 font-medium outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all placeholder-slate-300"
-                  />
+                <div style={{ marginBottom: 16 }}>
+                  <label style={labelStyle}>Display Name</label>
+                  <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Your name" style={inputStyle} />
                 </div>
               )}
 
-              {/* Username */}
-              <div className="mb-3">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Username</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => { setUsername(e.target.value); setError(''); }}
-                  placeholder="Enter username"
-                  autoComplete="username"
-                  className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 text-[14px] text-slate-800 font-medium outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all placeholder-slate-300"
-                />
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>Username</label>
+                <input type="text" value={username} onChange={(e) => { setUsername(e.target.value); setError(''); }} placeholder="Enter username" autoComplete="username" style={inputStyle} />
               </div>
 
-              {/* Password */}
-              <div className="mb-4">
-                <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Password</label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => { setPassword(e.target.value); setError(''); }}
-                    placeholder="Enter password"
-                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-                    className="w-full h-11 bg-slate-50 border border-slate-200 rounded-xl px-4 pr-12 text-[14px] text-slate-800 font-medium outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-100 transition-all placeholder-slate-300"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              <div style={{ marginBottom: error ? 0 : 20 }}>
+                <label style={labelStyle}>Password</label>
+                <div style={{ position: 'relative' }}>
+                  <input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => { setPassword(e.target.value); setError(''); }} placeholder="Enter password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} style={{ ...inputStyle, paddingRight: 44 }} />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#4b5563' }}>
+                    {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
                   </button>
                 </div>
               </div>
 
-              {/* Error */}
               {error && (
-                <div className="flex items-center gap-2 text-red-500 text-[12px] font-semibold mb-3 bg-red-50 px-3 py-2.5 rounded-xl border border-red-200 animate-slide-up">
-                  <AlertCircle size={14} className="shrink-0" />
-                  {error}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: '#f87171', backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 12px', margin: '12px 0' }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0 }} />{error}
                 </div>
               )}
 
-              {/* Submit */}
-              <button
-                type="submit"
-                disabled={isLoading}
-                className={`w-full h-11 rounded-xl font-bold text-[14px] flex items-center justify-center gap-2 transition-all mt-auto ${isLoading
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                  : 'bg-brand-600 text-white hover:bg-brand-700 active:scale-[0.97] shadow-lg shadow-brand-200'
-                  }`}
-              >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin-slow" />
-                ) : (
-                  <>
-                    {mode === 'login' ? <LogIn size={18} /> : <UserPlus size={18} />}
-                    {mode === 'login' ? 'Sign In' : 'Create Account'}
-                    <ArrowRight size={16} />
-                  </>
-                )}
+              <button type="submit" disabled={isLoading} style={{ width: '100%', height: 48, borderRadius: 14, border: 'none', cursor: isLoading ? 'not-allowed' : 'pointer', background: isLoading ? '#1e1e1e' : 'linear-gradient(135deg, #6d5bfa 0%, #9b5de5 100%)', color: isLoading ? '#4b5563' : '#fff', fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: isLoading ? 'none' : '0 6px 20px rgba(109,91,250,0.35)', marginTop: 'auto', letterSpacing: '0.02em' }}>
+                {isLoading ? <div style={{ width: 20, height: 20, border: '2px solid #2a2a2a', borderTopColor: '#8b5cf6', borderRadius: '50%' }} /> : <>{mode === 'login' ? <LogIn size={17} /> : <UserPlus size={17} />}{mode === 'login' ? 'Sign In' : 'Create Account'}<ArrowRight size={15} /></>}
               </button>
             </form>
           </div>
 
-          {/* Toggle login/signup */}
-          <div className="text-center mt-6">
-            <p className="text-white/60 text-[13px]">
+          {/* Toggle */}
+          <div style={{ textAlign: 'center', marginTop: 24 }}>
+            <p style={{ color: '#374151', fontSize: 13, margin: 0 }}>
               {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
-              <button
-                onClick={switchMode}
-                className="text-white font-bold ml-1.5 hover:text-brand-200 transition-colors"
-              >
+              <button onClick={switchMode} style={{ color: '#a78bfa', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer', marginLeft: 6, fontSize: 13 }}>
                 {mode === 'login' ? 'Sign Up' : 'Sign In'}
               </button>
             </p>
           </div>
 
-          {/* Footer */}
-          <p className="text-center text-white/20 text-[10px] mt-4">
-            Assistrio v1.0.0 • Privacy-First • Built for India
-          </p>
+          <p style={{ textAlign: 'center', color: '#1f1f1f', fontSize: 10, marginTop: 16 }}>Assistrio v1.0.0 • Privacy-First • Built for India</p>
         </div>
       </div>
     </div>

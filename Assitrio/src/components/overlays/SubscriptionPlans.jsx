@@ -1,201 +1,122 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Check, 
-  Zap, 
-  Crown, 
-  ShieldCheck, 
-  ChevronRight, 
-  CreditCard,
-  Target
-} from 'lucide-react';
+import { X, Check, Zap, Crown, ShieldCheck, CreditCard, Target } from 'lucide-react';
 import { paymentService } from '../../services/apiService';
 import toast from 'react-hot-toast';
 
 const PLANS = [
-  {
-    id: 'Free',
-    name: 'Essential',
-    price: '0',
-    description: 'Perfect for light users and occasional meetings.',
-    features: ['60 minutes monthly limit', 'Basic RAG indexing', 'Cloud sync across 2 devices', 'Email support'],
-    color: 'slate',
-    icon: ShieldCheck
-  },
-  {
-    id: 'Pro',
-    name: 'Professional',
-    price: '999',
-    description: 'Supercharge your productivity and recall speed.',
-    features: ['500 minutes monthly limit', 'Advanced AI summaries', 'Priority extraction queue', 'Early access to features'],
-    color: 'brand',
-    icon: Zap,
-    popular: true
-  },
-  {
-    id: 'Premium',
-    name: 'Executive',
-    price: '1999',
-    description: 'Unlimited bandwidth for enterprise power users.',
-    features: ['Unlimited recording minutes', 'Deep Audit MOM generation', 'Global context across all notes', '24/7 dedicated support'],
-    color: 'amber',
-    icon: Crown
-  }
+  { id: 'Free', name: 'Essential', price: '0', description: 'Perfect for light users and occasional meetings.', features: ['60 minutes monthly limit', 'Basic RAG indexing', 'Cloud sync across 2 devices', 'Email support'], accent: '#374151', icon: ShieldCheck },
+  { id: 'Pro', name: 'Professional', price: '999', description: 'Supercharge your productivity and recall speed.', features: ['500 minutes monthly limit', 'Advanced AI summaries', 'Priority extraction queue', 'Early access to features'], accent: '#6d5bfa', icon: Zap, popular: true },
+  { id: 'Premium', name: 'Executive', price: '1999', description: 'Unlimited bandwidth for enterprise power users.', features: ['Unlimited recording minutes', 'Deep Audit MOM generation', 'Global context across all notes', '24/7 dedicated support'], accent: '#f59e0b', icon: Crown },
 ];
 
 export default function SubscriptionPlans({ currentPlan, onClose, onSuccess }) {
   const [loading, setLoading] = useState(null);
 
   const handleSubscribe = async (plan) => {
-    if (plan.id === currentPlan) {
-      toast('You are already on this plan');
-      return;
-    }
-    if (plan.id === 'Free') {
-        toast('Please contact support to downgrade');
-        return;
-    }
-
+    if (plan.id === currentPlan) { toast('You are already on this plan'); return; }
+    if (plan.id === 'Free') { toast('Please contact support to downgrade'); return; }
     setLoading(plan.id);
     try {
       const order = await paymentService.createOrder(plan.id);
-      
       const options = {
-        key: 'rzp_test_YourKeyHere', // Replace with dynamic config from backend if possible
-        amount: order.amount,
-        currency: order.currency,
-        name: 'Assitrio AI',
-        description: `Upgrade to ${plan.name} Tier`,
-        order_id: order.id,
+        key: 'rzp_test_YourKeyHere', amount: order.amount, currency: order.currency,
+        name: 'Assistrio AI', description: `Upgrade to ${plan.name} Tier`, order_id: order.id,
         handler: async (response) => {
           try {
-            const verification = await paymentService.verifyPayment({
-              ...response,
-              plan: plan.id
-            });
-            if (verification.success) {
-              toast.success(`Welcome to ${plan.name}!`);
-              onSuccess && onSuccess(plan.id);
-              onClose();
-            }
-          } catch (err) {
-            toast.error('Payment verification failed');
-          }
+            const v = await paymentService.verifyPayment({ ...response, plan: plan.id });
+            if (v.success) { toast.success(`Welcome to ${plan.name}!`); onSuccess?.(plan.id); onClose(); }
+          } catch { toast.error('Payment verification failed'); }
         },
-        prefill: {
-          name: '',
-          email: '',
-          contact: ''
-        },
-        theme: {
-          color: '#4f46e5'
-        }
+        theme: { color: '#6d5bfa' }
       };
-
-      const rzp = new window.Razorpay(options);
-      rzp.open();
-    } catch (err) {
-      toast.error('Failed to initiate checkout');
-    } finally {
-      setLoading(null);
-    }
+      new window.Razorpay(options).open();
+    } catch { toast.error('Failed to initiate checkout'); }
+    finally { setLoading(null); }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-fade-in">
-      <div className="bg-slate-50 w-full max-w-5xl rounded-[40px] shadow-2xl overflow-hidden animate-zoom-in relative flex flex-col max-h-[90vh]">
-        
+    <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, backgroundColor: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(12px)', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+      <div style={{ backgroundColor: '#111111', width: '100%', maxWidth: 960, borderRadius: 32, boxShadow: '0 24px 80px rgba(0,0,0,0.7)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh', border: '1px solid #1f1f1f' }}>
+
         {/* Header */}
-        <div className="p-10 pb-0 flex justify-between items-start relative z-10 shrink-0">
+        <div style={{ padding: '32px 32px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #1a1a1a', paddingBottom: 24 }}>
           <div>
-            <div className="flex items-center gap-3 mb-3">
-                <div className="w-1.5 h-8 bg-brand-600 rounded-full" />
-                <h2 className="text-4xl font-black tracking-tighter text-slate-900 leading-none">Choose Your <span className="text-brand-600">Power</span></h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+              <div style={{ width: 4, height: 32, background: 'linear-gradient(180deg, #6d5bfa, #9b5de5)', borderRadius: 99 }} />
+              <h2 style={{ fontSize: 32, fontWeight: 800, color: '#f9fafb', letterSpacing: '-0.5px', margin: 0 }}>
+                Choose Your <span style={{ color: '#a78bfa' }}>Power</span>
+              </h2>
             </div>
-            <p className="text-[12px] text-slate-400 font-extrabold uppercase tracking-[0.2em] mt-2 ml-4">Scale your AI memory core as your bandwidth requirements grow.</p>
+            <p style={{ fontSize: 10, color: '#4b5563', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.2em', marginLeft: 16 }}>Scale your AI memory core as your bandwidth grows.</p>
           </div>
-          <button onClick={onClose} className="p-4 bg-white/50 backdrop-blur-xl rounded-2xl text-slate-400 hover:text-slate-600 shadow-xl border border-white transition-all hover:rotate-90 active:scale-95">
-            <X size={24} />
-          </button>
+          <button onClick={onClose} style={{ padding: 12, backgroundColor: '#1a1a1a', border: '1px solid #222', borderRadius: 16, color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={22} /></button>
         </div>
 
-        {/* Content */}
-        <div className="p-8 overflow-y-auto">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {PLANS.map(plan => (
-              <div 
-                key={plan.id}
-                className={`relative bg-white rounded-[32px] p-8 border-2 transition-all flex flex-col h-full ${
-                    plan.popular ? 'border-brand-500 shadow-xl shadow-brand-500/10' : 'border-slate-100 shadow-sm'
-                } ${currentPlan === plan.id ? 'ring-4 ring-emerald-500/10 border-emerald-500' : ''}`}
-              >
+        {/* Plans */}
+        <div style={{ padding: '24px 32px', overflowY: 'auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+          {PLANS.map(plan => {
+            const isActive = currentPlan === plan.id;
+            return (
+              <div key={plan.id} style={{ position: 'relative', backgroundColor: '#1a1a1a', borderRadius: 28, padding: '28px 24px', border: `2px solid ${plan.popular ? plan.accent : isActive ? '#34d399' : '#222'}`, display: 'flex', flexDirection: 'column', boxShadow: plan.popular ? `0 8px 32px rgba(109,91,250,0.2)` : 'none' }}>
                 {plan.popular && (
-                    <div className="absolute top-0 right-8 -translate-y-1/2 px-4 py-1 bg-brand-600 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg">
-                        Best Value
-                    </div>
+                  <div style={{ position: 'absolute', top: 0, right: 28, transform: 'translateY(-50%)', padding: '5px 14px', background: 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: '#fff', fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', borderRadius: 99, boxShadow: '0 4px 14px rgba(109,91,250,0.4)' }}>Best Value</div>
                 )}
-                
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 ${
-                    plan.color === 'slate' ? 'bg-slate-100 text-slate-600' : 
-                    plan.color === 'brand' ? 'bg-brand-50 text-brand-600' : 
-                    'bg-amber-50 text-amber-600'
-                }`}>
-                  <plan.icon size={28} />
+
+                <div style={{ width: 52, height: 52, borderRadius: 16, backgroundColor: `rgba(${plan.accent === '#6d5bfa' ? '109,91,250' : plan.accent === '#f59e0b' ? '245,158,11' : '55,65,81'},0.12)`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+                  <plan.icon size={26} style={{ color: plan.accent }} />
                 </div>
 
-                <h3 className="text-xl font-black text-slate-900 mb-1">{plan.name}</h3>
-                <p className="text-xs text-slate-400 font-medium leading-relaxed mb-6">{plan.description}</p>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: '#f9fafb', margin: '0 0 6px', letterSpacing: '-0.2px' }}>{plan.name}</h3>
+                <p style={{ fontSize: 12, color: '#4b5563', fontWeight: 500, lineHeight: 1.6, margin: '0 0 20px' }}>{plan.description}</p>
 
-                <div className="mb-10">
-                    <div className="flex items-end gap-1.5">
-                        <span className="text-5xl font-black text-slate-900 tracking-tighter">₹{plan.price}</span>
-                        <span className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2.5">/ Month</span>
+                <div style={{ marginBottom: 24 }}>
+                  <span style={{ fontSize: 40, fontWeight: 800, color: '#f9fafb', letterSpacing: '-0.5px' }}>₹{plan.price}</span>
+                  <span style={{ fontSize: 10, color: '#4b5563', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginLeft: 6 }}>/ month</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24, flex: 1 }}>
+                  {plan.features.map((f, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: '50%', backgroundColor: 'rgba(52,211,153,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                        <Check size={11} style={{ color: '#34d399' }} />
+                      </div>
+                      <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 500, lineHeight: 1.5 }}>{f}</span>
                     </div>
+                  ))}
                 </div>
 
-                <div className="space-y-4 mb-10 flex-1">
-                    {plan.features.map((f, i) => (
-                        <div key={i} className="flex items-start gap-3">
-                            <div className="w-5 h-5 rounded-full bg-emerald-50 flex items-center justify-center shrink-0 mt-0.5">
-                                <Check size={12} className="text-emerald-500" />
-                            </div>
-                            <span className="text-[12px] text-slate-600 font-medium leading-tight">{f}</span>
-                        </div>
-                    ))}
-                </div>
-
-                <button 
+                <button
                   onClick={() => handleSubscribe(plan)}
-                  disabled={loading || currentPlan === plan.id}
-                  className={`w-full py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all flex items-center justify-center gap-2 ${
-                    currentPlan === plan.id 
-                    ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' 
-                    : plan.color === 'brand'
-                    ? 'bg-brand-600 text-white shadow-xl shadow-brand-500/20 hover:scale-[1.02] active:scale-[0.98]'
-                    : 'bg-slate-900 text-white hover:bg-slate-800'
-                  }`}
+                  disabled={!!loading || isActive}
+                  style={{
+                    width: '100%', padding: '14px', borderRadius: 16, border: 'none', cursor: isActive ? 'default' : 'pointer',
+                    fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    backgroundColor: isActive ? 'rgba(52,211,153,0.1)' : plan.popular ? undefined : '#222',
+                    background: isActive ? 'rgba(52,211,153,0.1)' : plan.popular ? `linear-gradient(135deg, #6d5bfa, #9b5de5)` : undefined,
+                    color: isActive ? '#34d399' : '#fff',
+                    boxShadow: plan.popular && !isActive ? '0 6px 20px rgba(109,91,250,0.35)' : 'none',
+                  }}
                 >
-                  {loading === plan.id ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 
-                   currentPlan === plan.id ? <><ShieldCheck size={14}/> Active Plan</> : 'Select Tier'}
+                  {loading === plan.id ? <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%' }} /> : isActive ? <><ShieldCheck size={13} /> Active Plan</> : 'Select Tier'}
                 </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: '16px 32px 24px', borderTop: '1px solid #1a1a1a', display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            {[{ icon: ShieldCheck, label: 'PCI-DSS Compliant' }, { icon: Target, label: 'Razorpay Secure' }].map(({ icon: Icon, label }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 9, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                <Icon size={14} /> {label}
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Footer info */}
-        <div className="p-8 bg-slate-100/50 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 shrink-0">
-            <div className="flex items-center gap-4 text-slate-400">
-                <div className="flex items-center gap-2">
-                    <ShieldCheck size={16} /> <span className="text-[10px] font-bold uppercase tracking-widest">PCI-DSS Compliant</span>
-                </div>
-                <div className="flex items-center gap-2 border-l border-slate-200 pl-4">
-                    <Target size={16} /> <span className="text-[10px] font-bold uppercase tracking-widest">Razorpay Secure</span>
-                </div>
-            </div>
-            <p className="text-[9px] text-slate-400 max-w-sm text-center sm:text-right font-medium leading-relaxed">
-                By subscribing, you agree to our terms of service. You can cancel anytime. Subscriptions are billed monthly and renew automatically.
-            </p>
+          <p style={{ fontSize: 9, color: '#374151', maxWidth: 320, textAlign: 'right', lineHeight: 1.7, margin: 0 }}>
+            By subscribing, you agree to our terms. You can cancel anytime. Subscriptions are billed monthly and renew automatically.
+          </p>
         </div>
       </div>
     </div>

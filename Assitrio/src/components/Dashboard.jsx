@@ -2,286 +2,199 @@ import React, { useMemo } from 'react';
 import { getUsageStats } from '../services/usageTracker';
 import * as chrono from 'chrono-node';
 import LiveTimer from './LiveTimer';
-import {
-  LayoutDashboard,
-  Zap,
-  Target,
-  Users,
-  Circle,
-  TrendingUp,
-  ChevronRight,
-  Calendar,
-  Clock,
-  Mic,
-  FileText,
-  MessageCircle,
-  AlertTriangle,
-  Flag,
-  Mail
-} from 'lucide-react';
+import { Zap, Users, TrendingUp, Calendar, Clock, Mic, FileText, MessageCircle, Flag, Mail, Circle } from 'lucide-react';
+
+const dark = {
+  root: { padding: '16px 16px 100px', backgroundColor: '#111111', minHeight: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' },
+  headerDate: { fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 4 },
+  headerTitle: { fontSize: 24, fontWeight: 800, color: '#f9fafb', letterSpacing: '-0.3px' },
+  statusBadge: { display: 'flex', alignItems: 'center', gap: 6, backgroundColor: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', borderRadius: 99, padding: '6px 12px', fontSize: 10, fontWeight: 700, color: '#34d399' },
+  heroCard: { background: 'linear-gradient(135deg, #1a1030 0%, #0f0f1a 100%)', borderRadius: 24, padding: '20px', marginBottom: 20, border: '1px solid rgba(109,91,250,0.2)', position: 'relative', overflow: 'hidden' },
+  heroOverlay1: { position: 'absolute', top: -40, right: -40, width: 160, height: 160, background: 'rgba(109,91,250,0.08)', borderRadius: '50%', pointerEvents: 'none' },
+  heroOverlay2: { position: 'absolute', bottom: -32, left: -32, width: 120, height: 120, background: 'rgba(109,91,250,0.06)', borderRadius: '50%', pointerEvents: 'none' },
+  heroLabel: { fontSize: 11, color: '#6d5bfa', fontWeight: 600, marginBottom: 4 },
+  heroNum: { fontSize: 30, fontWeight: 800, color: '#f9fafb' },
+  heroPlan: { backgroundColor: 'rgba(255,255,255,0.08)', padding: '4px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, color: '#a78bfa' },
+  barWrap: { display: 'flex', alignItems: 'flex-end', gap: 4, height: 56, marginBottom: 12 },
+  bar: (h, hovered) => ({ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'pointer' }),
+  barInner: (h) => ({ width: '100%', height: `${h}%`, background: 'linear-gradient(to top, rgba(109,91,250,0.5), rgba(109,91,250,0.15))', borderRadius: '4px 4px 0 0' }),
+  barLabel: { fontSize: 8, color: '#4b5563', fontWeight: 500 },
+  statGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 24 },
+  statCard: { backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: 16, textAlign: 'center' },
+  statNum: (accent) => ({ fontSize: 22, fontWeight: 800, color: accent || '#f9fafb', marginBottom: 4 }),
+  statLabel: { fontSize: 9, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.1em' },
+  sectionRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 15, fontWeight: 700, color: '#f3f4f6' },
+  sectionLink: { fontSize: 12, fontWeight: 700, color: '#8b5cf6', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px' },
+  taskCard: (idx) => ({ backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', borderLeft: `3px solid ${idx === 0 ? '#ef4444' : idx === 1 ? '#f59e0b' : '#60a5fa'}`, padding: '14px 14px', marginBottom: 12, cursor: 'pointer' }),
+  taskPrioLabel: (idx) => ({ fontSize: 9, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', color: idx === 0 ? '#ef4444' : idx === 1 ? '#f59e0b' : '#60a5fa', marginBottom: 8 }),
+  taskTitle: { fontSize: 13, fontWeight: 700, color: '#f3f4f6', lineHeight: 1.4 },
+  chip: (bg, color, border) => ({ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9, fontWeight: 700, backgroundColor: bg, color, border: `1px solid ${border}`, borderRadius: 99, padding: '3px 7px' }),
+  noteCard: { backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: '14px', marginBottom: 10, cursor: 'pointer' },
+  progressBar: (pct) => ({ height: 4, borderRadius: 99, background: 'linear-gradient(90deg, #6d5bfa, #9b5de5)', width: `${Math.max(2, Math.min(100, pct))}%`, transition: 'width 0.4s' }),
+  contextCard: { backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: 16, marginBottom: 20 },
+};
 
 export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes = [], toggleTask, openNote, goToLocker }) {
-  // Add priority filter for critical tasks
   const criticalTasks = useMemo(() => {
-    const criticals = pendingTasks.filter(t => t.priority === 'Critical');
-    // Fast fallback: if no critical tasks explicitly exist yet but there are pending tasks, 
-    // we show the topmost pending task until AI starts tagging
-    return criticals.length > 0 ? criticals.slice(0, 3) : pendingTasks.slice(0, 3);
+    const c = pendingTasks.filter(t => t.priority === 'Critical');
+    return c.length > 0 ? c.slice(0, 3) : pendingTasks.slice(0, 3);
   }, [pendingTasks]);
+
   const recentNotes = notes.slice(0, 3);
 
-  // Dynamic date
-  const today = useMemo(() => {
-    const now = new Date();
-    return now.toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'long',
-      day: 'numeric',
-    });
-  }, []);
+  const today = useMemo(() => new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), []);
 
-  // Chart data dynamic based on combined usage volume (mins) per day of week
   const chartBars = useMemo(() => {
-    // Initialize empty buckets for Monday through Sunday
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const buckets = [0, 0, 0, 0, 0, 0, 0];
-    
-    // Combine active and deleted notes to track full historical usage
-    const allNotes = [...notes, ...deletedNotes];
-    
-    allNotes.forEach(n => {
-      let d = new Date(n.date);
-      if (isNaN(d.getTime())) {
-         d = new Date(); // fallback
-      }
-      let dayIndex = d.getDay(); // 0 is Sunday, 1 is Monday...
-      dayIndex = dayIndex === 0 ? 6 : dayIndex - 1; 
-
-      // Extract raw integer minutes from the "15 mins" or "1m" string
-      const parsedMins = parseInt(String(n.duration).replace(/\D/g, '')) || 1;
-      buckets[dayIndex] += parsedMins;
+    [...notes, ...deletedNotes].forEach(n => {
+      let d = new Date(n.date); if (isNaN(d.getTime())) d = new Date();
+      let di = d.getDay(); di = di === 0 ? 6 : di - 1;
+      buckets[di] += parseInt(String(n.duration).replace(/\D/g, '')) || 1;
     });
-
-    const maxVal = Math.max(...buckets, 1); // Avoid division by zero
-    
-    // Scale buckets to a minimum height of 10% and max of 95%
-    return buckets.map((count, i) => {
-      const height = count === 0 ? 10 : Math.max(20, Math.round((count / maxVal) * 95));
-      return {
-        height,
-        day: days[i],
-      };
-    });
-  }, [notes]);
+    const maxVal = Math.max(...buckets, 1);
+    return buckets.map((count, i) => ({ height: count === 0 ? 10 : Math.max(20, Math.round((count / maxVal) * 95)), day: days[i] }));
+  }, [notes, deletedNotes]);
 
   const actionablePercent = useMemo(() => {
-    const total = Array.isArray(notes) ? notes.flatMap(n => n.tasks || []) : [];
-    if (total.length === 0) return 0;
+    const total = notes.flatMap(n => n.tasks || []);
+    if (!total.length) return 0;
     return Math.round((total.filter(t => !t.done).length / total.length) * 100);
   }, [notes]);
 
   const upcomingContexts = useMemo(() => {
-    const contexts = [];
+    const ctxs = [];
     notes.forEach(note => {
       note.tasks?.forEach(task => {
         if (task.date && !task.done) {
-          const creationDate = new Date(`${note.date} ${note.time}`);
-          const parsed = chrono.parse(task.date, creationDate);
-          const targetDateObj = parsed.length > 0 ? parsed[0].start.date() : null;
-
-          contexts.push({
-            id: task.id,
-            noteId: note.id,
-            title: task.text,
-            time: note.time, // from transcription created time
-            dateLabel: task.date,
-            created: creationDate.getTime() || Date.now(),
-            targetDateObj
-          });
+          const cd = new Date(`${note.date} ${note.time}`);
+          const parsed = chrono.parse(task.date, cd);
+          ctxs.push({ id: task.id, noteId: note.id, title: task.text, time: note.time, dateLabel: task.date, created: cd.getTime() || Date.now(), targetDateObj: parsed[0]?.start.date() || null });
         }
       });
     });
-    // Sort by target date if available, otherwise by creation date
-    return contexts.sort((a, b) => {
+    return ctxs.sort((a, b) => {
       if (a.targetDateObj && b.targetDateObj) return a.targetDateObj - b.targetDateObj;
-      if (a.targetDateObj) return -1;
-      if (b.targetDateObj) return 1;
+      if (a.targetDateObj) return -1; if (b.targetDateObj) return 1;
       return b.created - a.created;
     }).slice(0, 3);
   }, [notes]);
 
-  // Real usage stats
   const usage = useMemo(() => getUsageStats('free'), [notes]);
 
   return (
-    <div className="p-4 sm:p-6 animate-slide-up min-h-full">
+    <div style={dark.root}>
       {/* Header */}
-      <div className="flex justify-between items-center mb-6 pt-4 sm:pt-6">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingTop: 24 }}>
         <div>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.15em] mb-1">{today}</p>
-          <h1 className="text-[24px] font-extrabold text-slate-900 tracking-tight">Assistrio</h1>
+          <p style={dark.headerDate}>{today}</p>
+          <h1 style={dark.headerTitle}>Assistrio</h1>
         </div>
-        <div className="bg-emerald-50 text-emerald-600 px-3 py-1.5 rounded-full text-[10px] font-bold flex items-center gap-2 border border-emerald-200">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> READY
+        <div style={dark.statusBadge}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#34d399' }} />
+          READY
         </div>
       </div>
 
       {/* Hero Card */}
-      <div className="bg-gradient-to-br from-brand-600 via-brand-700 to-brand-800 rounded-[24px] p-5 text-white mb-5 shadow-lg relative overflow-hidden">
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/5 rounded-full" />
-        <div className="absolute -bottom-8 -left-8 w-32 h-32 bg-white/5 rounded-full" />
-        <div className="flex justify-between items-start relative z-10 mb-4">
-          <div>
-            <p className="text-brand-200 text-xs font-semibold">Monthly Usage</p>
-            <h2 className="text-3xl font-extrabold mt-1">{usage.totalMinutes}<span className="text-lg font-bold text-brand-200">/{usage.minutesLimit === Infinity ? '∞' : usage.minutesLimit} min</span></h2>
+      <div style={dark.heroCard}>
+        <div style={dark.heroOverlay1} /><div style={dark.heroOverlay2} />
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+            <div>
+              <p style={dark.heroLabel}>Monthly Usage</p>
+              <h2 style={dark.heroNum}>
+                {usage.totalMinutes}
+                <span style={{ fontSize: 15, fontWeight: 600, color: '#6d5bfa' }}>/{usage.minutesLimit === Infinity ? '∞' : usage.minutesLimit} min</span>
+              </h2>
+            </div>
+            <div style={dark.heroPlan}>{usage.planName} Plan</div>
           </div>
-          <div className="bg-white/15 px-3 py-1.5 rounded-full text-[10px] font-bold">{usage.planName} Plan</div>
-        </div>
-        <div className="flex items-end gap-1.5 h-16 mb-3 relative z-10">
-          {chartBars.map((bar, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div
-                style={{ height: `${bar.height}%` }}
-                className="w-full bg-gradient-to-t from-white/40 to-white/15 rounded-t-md hover:from-white/60 hover:to-white/30 transition-all cursor-pointer"
-              />
-              <span className="text-[8px] text-brand-300 font-medium">{bar.day}</span>
-            </div>
-          ))}
-        </div>
-          <div className="flex justify-between items-center relative z-10">
-            <div className="flex gap-4 text-[11px]">
-              <span className="text-brand-200"><Mic size={11} className="inline mr-1" />{usage.listenMinutes}m command</span>
-              <span className="text-brand-200"><Users size={11} className="inline mr-1" />{usage.talkMinutes}m talk</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-brand-200 text-[11px]">
-              <TrendingUp size={14} />
-              {/* Using native usage total to prevent count dropping when a note is deleted */}
-              {usage.totalSessions} sessions
-            </div>
+
+          <div style={dark.barWrap}>
+            {chartBars.map((bar, i) => (
+              <div key={i} style={dark.bar(bar.height)}>
+                <div style={dark.barInner(bar.height)} />
+                <span style={dark.barLabel}>{bar.day}</span>
+              </div>
+            ))}
           </div>
-        {/* Progress bar */}
-        <div className="mt-3 w-full bg-white/10 rounded-full h-1.5 relative z-10">
-          <div
-            className={`h-1.5 rounded-full transition-all ${
-              usage.usagePercent > 80 ? 'bg-red-400' : usage.usagePercent > 50 ? 'bg-amber-300' : 'bg-emerald-300'
-            }`}
-            style={{ width: `${Math.max(2, Math.min(100, usage.usagePercent))}%` }}
-          />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#6b7280' }}>
+              <span><Mic size={10} style={{ display: 'inline', marginRight: 3 }} />{usage.listenMinutes}m cmd</span>
+              <span><Users size={10} style={{ display: 'inline', marginRight: 3 }} />{usage.talkMinutes}m talk</span>
+            </div>
+            <span style={{ fontSize: 11, color: '#6b7280', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <TrendingUp size={13} /> {usage.totalSessions} sessions
+            </span>
+          </div>
+
+          <div style={{ height: 4, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ ...dark.progressBar(usage.usagePercent), background: usage.usagePercent > 80 ? '#ef4444' : usage.usagePercent > 50 ? '#f59e0b' : 'linear-gradient(90deg,#6d5bfa,#9b5de5)' }} />
+          </div>
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center">
-          <p className="text-2xl font-extrabold text-slate-800">{notes.length}</p>
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">Notes</p>
-        </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center">
-          <p className="text-2xl font-extrabold text-brand-600">{pendingTasks.length}</p>
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">Pending</p>
-        </div>
-        <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm text-center">
-          <p className="text-2xl font-extrabold text-slate-800">{actionablePercent}%</p>
-          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">Actionable</p>
-        </div>
+      {/* Stats */}
+      <div style={dark.statGrid}>
+        <div style={dark.statCard}><p style={dark.statNum()}>{notes.length}</p><p style={dark.statLabel}>Notes</p></div>
+        <div style={dark.statCard}><p style={dark.statNum('#a78bfa')}>{pendingTasks.length}</p><p style={dark.statLabel}>Pending</p></div>
+        <div style={dark.statCard}><p style={dark.statNum()}>{actionablePercent}%</p><p style={dark.statLabel}>Actionable</p></div>
       </div>
 
-      {/* Critical Action Items */}
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-bold text-[15px] text-slate-900">Most Critical Actions</h3>
-        <button onClick={goToLocker} className="text-brand-600 text-xs font-bold px-2 py-1">View All</button>
+      {/* Critical Tasks */}
+      <div style={dark.sectionRow}>
+        <h3 style={dark.sectionTitle}>Most Critical Actions</h3>
+        <button style={dark.sectionLink} onClick={goToLocker}>View All</button>
       </div>
-      <div className="space-y-4 mb-8">
+      <div style={{ marginBottom: 24 }}>
         {criticalTasks.length === 0 ? (
-          <div className="bg-white p-8 rounded-2xl border border-slate-100 text-center shadow-sm">
-            <div className="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Zap size={20} className="text-emerald-500" />
-            </div>
-            <p className="text-sm font-semibold text-slate-700">All caught up!</p>
-            <p className="text-xs text-slate-400 mt-1">No critical tasks pending</p>
+          <div style={{ ...dark.noteCard, textAlign: 'center', padding: 32 }}>
+            <Zap size={22} style={{ color: '#34d399', margin: '0 auto 10px', display: 'block' }} />
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#9ca3af', margin: '0 0 4px' }}>All caught up!</p>
+            <p style={{ fontSize: 11, color: '#4b5563', margin: 0 }}>No critical tasks pending</p>
           </div>
-        ) : (
-          criticalTasks.map((task, idx) => (
-            <div
-              key={task.id}
-              className={`border-l-[3px] p-4 rounded-r-2xl shadow-sm bg-white cursor-pointer transition-all hover:shadow-md active:scale-[0.98] ${
-                idx === 0 ? 'border-red-500' : idx === 1 ? 'border-amber-400' : 'border-blue-400'
-              }`}
-              onClick={() => openNote(task.noteId)}
-            >
-              <p className={`text-[9px] font-extrabold uppercase tracking-[0.15em] mb-2 ${
-                idx === 0 ? 'text-red-500' : idx === 1 ? 'text-amber-500' : 'text-blue-500'
-              }`}>
-                {idx === 0 ? 'HIGH PRIORITY' : idx === 1 ? 'ACTION REQUIRED' : 'FOLLOW UP'}
-              </p>
-              <div className="flex gap-3 items-start">
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleTask(task.noteId, task.id); }}
-                  className="mt-0.5 text-slate-300 hover:text-brand-500 transition-colors"
-                  aria-label={`Mark "${task.text}" as complete`}
-                >
-                  <Circle size={18} />
-                </button>
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-800 text-[13px] leading-tight">{task.text}</p>
-                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    <p className="text-[11px] text-slate-400 line-clamp-1">{task.noteTitle}</p>
-                    {task.date && (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold bg-brand-50 text-brand-600 px-1.5 py-0.5 rounded-full">
-                        <Calendar size={8} />
-                        {task.date}
-                      </span>
-                    )}
-                    {task.priority && task.priority !== 'Normal' && (
-                      <span className={`inline-flex items-center gap-0.5 text-[8px] font-extrabold px-1.5 py-0.5 rounded-full ${
-                        task.priority === 'Critical'
-                          ? 'bg-red-50 text-red-600 border border-red-200'
-                          : 'bg-amber-50 text-amber-600 border border-amber-200'
-                      }`}>
-                        <Flag size={7} />
-                        {task.priority}
-                      </span>
-                    )}
-                    {task.assignee && (
-                      <span className="inline-flex items-center gap-0.5 text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">
-                        <Mail size={7} />
-                        {task.assignee.split('@')[0]}
-                      </span>
-                    )}
-                    <button
-                      className="flex items-center gap-1 text-[9px] hover:text-brand-700 font-bold bg-brand-50 text-brand-600 px-2 py-0.5 rounded transition-colors"
-                    >
-                      <FileText size={10} /> VIEW SOURCE MOM
-                    </button>
-                  </div>
+        ) : criticalTasks.map((task, idx) => (
+          <div key={task.id} style={dark.taskCard(idx)} onClick={() => openNote(task.noteId)}>
+            <p style={dark.taskPrioLabel(idx)}>{idx === 0 ? 'HIGH PRIORITY' : idx === 1 ? 'ACTION REQUIRED' : 'FOLLOW UP'}</p>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <button onClick={(e) => { e.stopPropagation(); toggleTask(task.noteId, task.id); }} style={{ color: '#374151', background: 'none', border: 'none', cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
+                <Circle size={18} />
+              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={dark.taskTitle}>{task.text}</p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                  {task.date && <span style={dark.chip('rgba(109,91,250,0.1)', '#8b5cf6', 'rgba(109,91,250,0.2)')}><Calendar size={8} />{task.date}</span>}
+                  {task.priority && task.priority !== 'Normal' && <span style={dark.chip('rgba(239,68,68,0.1)', '#f87171', 'rgba(239,68,68,0.2)')}><Flag size={7} />{task.priority}</span>}
+                  {task.assignee && <span style={dark.chip('rgba(167,139,250,0.1)', '#a78bfa', 'rgba(167,139,250,0.2)')}><Mail size={7} />{task.assignee.split('@')[0]}</span>}
+                  <span style={dark.chip('rgba(109,91,250,0.08)', '#8b5cf6', 'rgba(109,91,250,0.15)')}><FileText size={9} style={{ display: 'inline' }} /> VIEW SOURCE</span>
                 </div>
               </div>
             </div>
-          ))
-        )}
+          </div>
+        ))}
       </div>
 
       {/* Upcoming Contexts */}
       {upcomingContexts.length > 0 && (
         <>
-          <h3 className="font-bold text-[15px] text-slate-900 mb-4">Upcoming Contexts</h3>
-          <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm mb-8 space-y-4">
+          <h3 style={{ ...dark.sectionTitle, marginBottom: 12 }}>Upcoming Contexts</h3>
+          <div style={dark.contextCard}>
             {upcomingContexts.map((ctx, idx) => (
               <React.Fragment key={ctx.id}>
-                {idx > 0 && <div className="w-full h-px bg-slate-100" />}
-                <div
-                  className={`flex gap-4 items-center cursor-pointer transition-all active:scale-[0.98] ${idx > 0 ? 'opacity-60 hover:opacity-100' : ''}`}
-                  onClick={() => openNote(ctx.noteId)}
-                >
-                  <div className={`flex flex-col items-center justify-center w-11 h-11 ${idx === 0 ? 'bg-brand-50' : 'bg-slate-50'} rounded-xl shrink-0`}>
-                    <span className={`text-[10px] font-bold ${idx === 0 ? 'text-brand-600' : 'text-slate-400'}`}>{ctx.time}</span>
+                {idx > 0 && <div style={{ height: 1, backgroundColor: '#222', margin: '12px 0' }} />}
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 0.6 : 1 }} onClick={() => openNote(ctx.noteId)}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: idx === 0 ? 'rgba(109,91,250,0.12)' : '#1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: idx === 0 ? '#a78bfa' : '#4b5563' }}>{ctx.time}</span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-center">
-                      <p className="font-bold text-slate-800 text-[13px] truncate pr-2">{ctx.title}</p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: '#f3f4f6', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{ctx.title}</p>
                       {ctx.targetDateObj && <LiveTimer targetDate={ctx.targetDateObj} />}
                     </div>
-                    <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5 truncate">
+                    <p style={{ fontSize: 11, color: '#4b5563', margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Clock size={11} /> Scheduled for: {ctx.dateLabel}
                     </p>
                   </div>
@@ -292,29 +205,22 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
         </>
       )}
 
-      {/* Recent Memories */}
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-bold text-[15px] text-slate-900">Recent Memories</h3>
-        <button onClick={goToLocker} className="text-brand-600 text-xs font-bold px-2 py-1">Locker</button>
+      {/* Recent Notes */}
+      <div style={dark.sectionRow}>
+        <h3 style={dark.sectionTitle}>Recent Memories</h3>
+        <button style={dark.sectionLink} onClick={goToLocker}>Locker</button>
       </div>
-      <div className="space-y-4 pb-6">
+      <div>
         {recentNotes.map(note => (
-          <div
-            key={note.id}
-            onClick={() => openNote(note.id)}
-            className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm cursor-pointer hover:border-brand-200 hover:shadow-md transition-all active:scale-[0.98]"
-          >
-            <h4 className="font-bold text-slate-800 text-[13px] mb-1">{note.title}</h4>
-            <p className="text-[12px] text-slate-500 line-clamp-2 mb-2.5 leading-relaxed">{note.summary}</p>
-            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-medium">
-              <span className="flex items-center gap-1"><Calendar size={10} /> {note.date}</span>
+          <div key={note.id} style={dark.noteCard} onClick={() => openNote(note.id)}>
+            <h4 style={{ fontSize: 13, fontWeight: 700, color: '#f3f4f6', marginBottom: 6 }}>{note.title}</h4>
+            <p style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{note.summary}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: '#4b5563', fontWeight: 500, flexWrap: 'wrap' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Calendar size={10} />{note.date}</span>
               <span>•</span>
-              <span className="flex items-center gap-1"><Clock size={10} /> {note.duration}</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={10} />{note.duration}</span>
               <span>•</span>
-              <span className="flex items-center gap-1">
-                {note.source === 'talk' ? <MessageCircle size={10} /> : <Mic size={10} />}
-                {note.source === 'talk' ? 'Talk' : 'Listen'}
-              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{note.source === 'talk' ? <MessageCircle size={10} /> : <Mic size={10} />}{note.source === 'talk' ? 'Talk' : 'Listen'}</span>
               <span>•</span>
               <span>{note.tasks.length} tasks</span>
             </div>

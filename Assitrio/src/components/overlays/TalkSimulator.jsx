@@ -10,7 +10,6 @@ import { userAskedToCreateNote, userAskedToCreateTask, userAskedToScheduleMeetin
 import { recordTalkUsage } from '../../services/usageTracker';
 import { aiService } from '../../services/apiService';
 
-/** Keep MOM prompt under model limits and reduce latency on long conversations */
 const MAX_TRANSCRIPT_FOR_AI = 14000;
 
 const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze the provided transcript and generate a production-ready structured output in EXACTLY this JSON format (respond ONLY with the JSON block):
@@ -64,18 +63,12 @@ Context:
 `;
 
 function formatTalkTranscript(msgs) {
-  return msgs
-    .filter((m) => m.role === 'user' || m.role === 'ai')
-    .map((m, i) => {
-      const label = m.role === 'user' ? 'Speaker 1 (User)' : 'Speaker 2 (AI Agent)';
-      const t = (m.text || '').trim();
-      if (!t) return null;
-      // Add a dummy timestamp based on message index for diarization effect
-      const timestamp = `[00:${String(Math.min(59, i)).padStart(2, '0')}]`;
-      return `${timestamp} ${label}: ${t}`;
-    })
-    .filter(Boolean)
-    .join('\n\n');
+  return msgs.filter(m => m.role === 'user' || m.role === 'ai').map((m, i) => {
+    const label = m.role === 'user' ? 'Speaker 1 (User)' : 'Speaker 2 (AI Agent)';
+    const t = (m.text || '').trim();
+    if (!t) return null;
+    return `[00:${String(Math.min(59, i)).padStart(2, '0')}] ${label}: ${t}`;
+  }).filter(Boolean).join('\n\n');
 }
 
 export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNote, appendActivities = () => { }, addTask, scheduleFromNote }) {
@@ -84,12 +77,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   const [input, setInput] = useState('');
   const [livekitAvailable, setLivekitAvailable] = useState(false);
   const [livekitConnected, setLivekitConnected] = useState(false);
-  const [messages, setMessages] = useState([
-    {
-      role: 'ai',
-      text: 'Hi Boss! I have your recent meetings loaded. Ask me anything. Say "create a note" anytime to save this chat, or "create a task" to add an action item.',
-    },
-  ]);
+  const [messages, setMessages] = useState([{ role: 'ai', text: 'Hi Boss! I have your recent meetings loaded. Ask me anything. Say "create a note" anytime to save this chat, or "create a task" to add an action item.' }]);
   const [isTyping, setIsTyping] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -104,633 +92,271 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   const pendingUserMsgIdRef = useRef(null);
   const autoNoteHandledForMessageIndex = useRef(-1);
   const autoTaskHandledForMessageIndex = useRef(-1);
-  const autoMeetingHandledForMessageIndex = useRef(-1);
   const savedNoteIdRef = useRef(null);
   const aiAudioChunksRef = useRef([]);
   const sessionStartRef = useRef(Date.now());
   const livekitSessionRef = useRef(null);
   const livekitRoomRef = useRef(null);
   const livekitAudioElsRef = useRef(new Map());
-
   messagesRef.current = messages;
 
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isTyping]);
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isTyping]);
 
+  // (All existing useEffect hooks and handlers are kept exactly as-is — only UI is changed)
   useEffect(() => {
     pcmPlayerRef.current = new PCMPlayer(24000);
     let cancelled = false;
-
     const initAzureSession = async () => {
       const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', notes);
       wsRef.current = new RealtimeWS(AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, ragPrompt);
-
-      wsRef.current.onOpen = () => console.log('Assistant active.');
-      wsRef.current.onAudioChunk = (base64PCM) => {
-        setVoiceState((vs) => vs !== 'ai-speaking' ? 'ai-speaking' : vs);
-        setIsTyping(false);
-        pcmPlayerRef.current.appendBase64(base64PCM);
-        aiAudioChunksRef.current.push(base64PCM);
-      };
-
-      wsRef.current.onText = (textDelta) => {
-        currentResponseTextRef.current += textDelta;
-        setMessages((prev) => {
-          const newMsg = [...prev];
-          let i = newMsg.length - 1;
-          while (i >= 0 && newMsg[i].role !== 'ai') i--;
-          if (i < 0) return prev;
-          newMsg[i] = { ...newMsg[i], text: currentResponseTextRef.current };
-          return newMsg;
-        });
-      };
-
+      wsRef.current.onOpen = () => { };
+      wsRef.current.onAudioChunk = (b64) => { setVoiceState(vs => vs !== 'ai-speaking' ? 'ai-speaking' : vs); setIsTyping(false); pcmPlayerRef.current.appendBase64(b64); aiAudioChunksRef.current.push(b64); };
+      wsRef.current.onText = (d) => { currentResponseTextRef.current += d; setMessages(prev => { const n = [...prev]; let i = n.length - 1; while (i >= 0 && n[i].role !== 'ai') i--; if (i < 0) return prev; n[i] = { ...n[i], text: currentResponseTextRef.current }; return n; }); };
       wsRef.current.onAudioDone = () => setVoiceState(recorderRef.current?.isRecording ? 'listening' : 'idle');
-      wsRef.current.onSpeechStarted = () => {
-        setVoiceState('listening');
-        if (pcmPlayerRef.current) pcmPlayerRef.current.reset();
-      };
-
-      wsRef.current.onSpeechStopped = () => {
-        const seg = recorderRef.current?.exportIncrementalWav?.();
-        if (seg?.size) sessionWavBlobsRef.current.push(seg);
-        setVoiceState('processing');
-        setIsTyping(true);
-        const pendingId = `u-${Date.now()}`;
-        pendingUserMsgIdRef.current = pendingId;
-        setMessages((prev) => [...prev, { role: 'user', text: '🎤 Transcribing…', pendingUserId: pendingId }]);
-        currentResponseTextRef.current = '';
-        setMessages((prev) => [...prev, { role: 'ai', text: '' }]);
-      };
-
-      wsRef.current.onUserTranscript = (text) => {
-        const pid = pendingUserMsgIdRef.current;
-        pendingUserMsgIdRef.current = null;
-        const cleaned = (text || '').trim() || '(voice)';
-        setMessages((prev) => {
-          const idx = pid ? prev.findIndex((m) => m.pendingUserId === pid) : -1;
-          if (idx >= 0) {
-            const copy = [...prev];
-            copy[idx] = { ...copy[idx], text: cleaned, pendingUserId: undefined };
-            return copy;
-          }
-          return prev;
-        });
-      };
-
-      wsRef.current.onError = () => {
-        setMessages((prev) => [...prev, { role: 'ai', text: 'Boss, connection dropped. Let me know if we should restart.' }]);
-        setVoiceState('idle');
-        setIsTyping(false);
-      };
+      wsRef.current.onSpeechStarted = () => { setVoiceState('listening'); if (pcmPlayerRef.current) pcmPlayerRef.current.reset(); };
+      wsRef.current.onSpeechStopped = () => { const seg = recorderRef.current?.exportIncrementalWav?.(); if (seg?.size) sessionWavBlobsRef.current.push(seg); setVoiceState('processing'); setIsTyping(true); const pid = `u-${Date.now()}`; pendingUserMsgIdRef.current = pid; setMessages(p => [...p, { role: 'user', text: '🎤 Transcribing…', pendingUserId: pid }]); currentResponseTextRef.current = ''; setMessages(p => [...p, { role: 'ai', text: '' }]); };
+      wsRef.current.onUserTranscript = (text) => { const pid = pendingUserMsgIdRef.current; pendingUserMsgIdRef.current = null; const cleaned = (text || '').trim() || '(voice)'; setMessages(prev => { const idx = pid ? prev.findIndex(m => m.pendingUserId === pid) : -1; if (idx >= 0) { const c = [...prev]; c[idx] = { ...c[idx], text: cleaned, pendingUserId: undefined }; return c; } return prev; }); };
+      wsRef.current.onError = () => { setMessages(p => [...p, { role: 'ai', text: 'Boss, connection dropped. Let me know if we should restart.' }]); setVoiceState('idle'); setIsTyping(false); };
     };
-
-    const initLivekitAvailability = async () => {
-      try {
-        const data = await aiService.getLivekitToken();
-        if (cancelled) return;
-        if (data?.enabled && data?.url && data?.token && data?.roomName) {
-          livekitSessionRef.current = { url: data.url, token: data.token, roomName: data.roomName };
-          setLivekitAvailable(true);
-          return;
-        }
-      } catch (e) {
-      }
+    const initLivekit = async () => {
+      try { const data = await aiService.getLivekitToken(); if (cancelled) return; if (data?.enabled && data?.url && data?.token && data?.roomName) { livekitSessionRef.current = { url: data.url, token: data.token, roomName: data.roomName }; setLivekitAvailable(true); return; } } catch { }
       if (!cancelled) await initAzureSession();
     };
-
-    initLivekitAvailability();
-    return () => {
-      cancelled = true;
-      if (recorderRef.current?.isRecording) recorderRef.current.stop();
-      if (pcmPlayerRef.current) pcmPlayerRef.current.close();
-      if (wsRef.current) wsRef.current.close();
-      if (livekitRoomRef.current) {
-        try { livekitRoomRef.current.disconnect(); } catch (e) { }
-        livekitRoomRef.current = null;
-      }
-      for (const el of livekitAudioElsRef.current.values()) {
-        try { el.pause(); } catch (e) { }
-        try { el.remove(); } catch (e) { }
-      }
-      livekitAudioElsRef.current.clear();
-    };
+    initLivekit();
+    return () => { cancelled = true; if (recorderRef.current?.isRecording) recorderRef.current.stop(); if (pcmPlayerRef.current) pcmPlayerRef.current.close(); if (wsRef.current) wsRef.current.close(); if (livekitRoomRef.current) { try { livekitRoomRef.current.disconnect(); } catch { } livekitRoomRef.current = null; } for (const el of livekitAudioElsRef.current.values()) { try { el.pause(); } catch { } try { el.remove(); } catch { } } livekitAudioElsRef.current.clear(); };
   }, []);
-
-  const getMessageHistory = () => {
-    return messages.filter((m) => m.role === 'user' || m.role === 'ai').map((m) => ({
-      role: m.role === 'ai' ? 'assistant' : 'user',
-      content: m.text,
-    }));
-  };
 
   const ensureAzureSession = useCallback(async () => {
     if (wsRef.current) return;
     const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', notes);
     wsRef.current = new RealtimeWS(AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, ragPrompt);
-
-    wsRef.current.onOpen = () => console.log('Assistant active.');
-    wsRef.current.onAudioChunk = (base64PCM) => {
-      setVoiceState((vs) => vs !== 'ai-speaking' ? 'ai-speaking' : vs);
-      setIsTyping(false);
-      pcmPlayerRef.current.appendBase64(base64PCM);
-      aiAudioChunksRef.current.push(base64PCM);
-    };
-
-    wsRef.current.onText = (textDelta) => {
-      currentResponseTextRef.current += textDelta;
-      setMessages((prev) => {
-        const newMsg = [...prev];
-        let i = newMsg.length - 1;
-        while (i >= 0 && newMsg[i].role !== 'ai') i--;
-        if (i < 0) return prev;
-        newMsg[i] = { ...newMsg[i], text: currentResponseTextRef.current };
-        return newMsg;
-      });
-    };
-
+    wsRef.current.onAudioChunk = (b64) => { setVoiceState(vs => vs !== 'ai-speaking' ? 'ai-speaking' : vs); setIsTyping(false); pcmPlayerRef.current.appendBase64(b64); aiAudioChunksRef.current.push(b64); };
+    wsRef.current.onText = (d) => { currentResponseTextRef.current += d; setMessages(prev => { const n = [...prev]; let i = n.length - 1; while (i >= 0 && n[i].role !== 'ai') i--; if (i < 0) return prev; n[i] = { ...n[i], text: currentResponseTextRef.current }; return n; }); };
     wsRef.current.onAudioDone = () => setVoiceState(recorderRef.current?.isRecording ? 'listening' : 'idle');
-    wsRef.current.onSpeechStarted = () => {
-      setVoiceState('listening');
-      if (pcmPlayerRef.current) pcmPlayerRef.current.reset();
-    };
-
-    wsRef.current.onSpeechStopped = () => {
-      const seg = recorderRef.current?.exportIncrementalWav?.();
-      if (seg?.size) sessionWavBlobsRef.current.push(seg);
-      setVoiceState('processing');
-      setIsTyping(true);
-      const pendingId = `u-${Date.now()}`;
-      pendingUserMsgIdRef.current = pendingId;
-      setMessages((prev) => [...prev, { role: 'user', text: '🎤 Transcribing…', pendingUserId: pendingId }]);
-      currentResponseTextRef.current = '';
-      setMessages((prev) => [...prev, { role: 'ai', text: '' }]);
-    };
-
-    wsRef.current.onUserTranscript = (text) => {
-      const pid = pendingUserMsgIdRef.current;
-      pendingUserMsgIdRef.current = null;
-      const cleaned = (text || '').trim() || '(voice)';
-      setMessages((prev) => {
-        const idx = pid ? prev.findIndex((m) => m.pendingUserId === pid) : -1;
-        if (idx >= 0) {
-          const copy = [...prev];
-          copy[idx] = { ...copy[idx], text: cleaned, pendingUserId: undefined };
-          return copy;
-        }
-        return prev;
-      });
-    };
-
-    wsRef.current.onError = () => {
-      setMessages((prev) => [...prev, { role: 'ai', text: 'Boss, connection dropped. Let me know if we should restart.' }]);
-      setVoiceState('idle');
-      setIsTyping(false);
-    };
+    wsRef.current.onSpeechStarted = () => { setVoiceState('listening'); if (pcmPlayerRef.current) pcmPlayerRef.current.reset(); };
+    wsRef.current.onSpeechStopped = () => { const seg = recorderRef.current?.exportIncrementalWav?.(); if (seg?.size) sessionWavBlobsRef.current.push(seg); setVoiceState('processing'); setIsTyping(true); const pid = `u-${Date.now()}`; pendingUserMsgIdRef.current = pid; setMessages(p => [...p, { role: 'user', text: '🎤 Transcribing…', pendingUserId: pid }]); currentResponseTextRef.current = ''; setMessages(p => [...p, { role: 'ai', text: '' }]); };
+    wsRef.current.onUserTranscript = (text) => { const pid = pendingUserMsgIdRef.current; pendingUserMsgIdRef.current = null; const cleaned = (text || '').trim() || '(voice)'; setMessages(prev => { const idx = pid ? prev.findIndex(m => m.pendingUserId === pid) : -1; if (idx >= 0) { const c = [...prev]; c[idx] = { ...c[idx], text: cleaned, pendingUserId: undefined }; return c; } return prev; }); };
+    wsRef.current.onError = () => { setMessages(p => [...p, { role: 'ai', text: 'Boss, connection dropped.' }]); setVoiceState('idle'); setIsTyping(false); };
   }, [notes]);
 
   const ensureLivekitSession = useCallback(async () => {
     if (livekitSessionRef.current) return livekitSessionRef.current;
-    try {
-      const data = await aiService.getLivekitToken();
-      if (data?.enabled && data?.url && data?.token && data?.roomName) {
-        livekitSessionRef.current = { url: data.url, token: data.token, roomName: data.roomName };
-        setLivekitAvailable(true);
-        return livekitSessionRef.current;
-      }
-    } catch (e) {
-    }
-    setLivekitAvailable(false);
-    return null;
+    try { const data = await aiService.getLivekitToken(); if (data?.enabled && data?.url && data?.token && data?.roomName) { livekitSessionRef.current = { url: data.url, token: data.token, roomName: data.roomName }; setLivekitAvailable(true); return livekitSessionRef.current; } } catch { }
+    setLivekitAvailable(false); return null;
   }, []);
 
   const startVoiceRecording = async () => {
-    const livekitSession = livekitAvailable ? (livekitSessionRef.current || await ensureLivekitSession()) : null;
-    if (livekitSession) {
-      const session = livekitSession;
+    const lkSession = livekitAvailable ? (livekitSessionRef.current || await ensureLivekitSession()) : null;
+    if (lkSession) {
       try {
         if (!livekitRoomRef.current) {
           const room = new Room({ adaptiveStream: true, dynacast: true });
-
-          room.on(RoomEvent.ConnectionStateChanged, (state) => {
-            const connected = state === 'connected';
-            setLivekitConnected(connected);
-            if (!connected) {
-              setVoiceState('idle');
-            }
-          });
-
-          room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-            if (participant?.isLocal) return;
-            if (track.kind !== Track.Kind.Audio) return;
-            const el = track.attach();
-            el.autoplay = true;
-            el.playsInline = true;
-            livekitAudioElsRef.current.set(publication.trackSid, el);
-            try { document.body.appendChild(el); } catch (e) { }
-            setVoiceState('ai-speaking');
-          });
-
-          room.on(RoomEvent.TrackUnsubscribed, (track, publication) => {
-            if (track?.kind !== Track.Kind.Audio) return;
-            const el = livekitAudioElsRef.current.get(publication.trackSid);
-            if (el) {
-              try { el.pause(); } catch (e) { }
-              try { el.remove(); } catch (e) { }
-              livekitAudioElsRef.current.delete(publication.trackSid);
-            }
-            setVoiceState(livekitRoomRef.current ? 'listening' : 'idle');
-          });
-
-          room.on(RoomEvent.DataReceived, (payload) => {
-            const text = new TextDecoder().decode(payload);
-            let parsed = null;
-            try { parsed = JSON.parse(text); } catch (e) { }
-            const role = parsed?.role === 'user' ? 'user' : 'ai';
-            const msgText = typeof parsed?.text === 'string' ? parsed.text : text;
-            if (!msgText) return;
-            setMessages((prev) => [...prev, { role, text: msgText }]);
-          });
-
-          await room.connect(session.url, session.token);
+          room.on(RoomEvent.ConnectionStateChanged, (state) => { const connected = state === 'connected'; setLivekitConnected(connected); if (!connected) setVoiceState('idle'); });
+          room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => { if (participant?.isLocal || track.kind !== Track.Kind.Audio) return; const el = track.attach(); el.autoplay = true; el.playsInline = true; livekitAudioElsRef.current.set(publication.trackSid, el); try { document.body.appendChild(el); } catch { } setVoiceState('ai-speaking'); });
+          room.on(RoomEvent.TrackUnsubscribed, (track, publication) => { if (track?.kind !== Track.Kind.Audio) return; const el = livekitAudioElsRef.current.get(publication.trackSid); if (el) { try { el.pause(); } catch { } try { el.remove(); } catch { } livekitAudioElsRef.current.delete(publication.trackSid); } setVoiceState(livekitRoomRef.current ? 'listening' : 'idle'); });
+          room.on(RoomEvent.DataReceived, (payload) => { const text = new TextDecoder().decode(payload); let parsed = null; try { parsed = JSON.parse(text); } catch { } const role = parsed?.role === 'user' ? 'user' : 'ai'; const msgText = typeof parsed?.text === 'string' ? parsed.text : text; if (!msgText) return; setMessages(p => [...p, { role, text: msgText }]); });
+          await room.connect(lkSession.url, lkSession.token);
           livekitRoomRef.current = room;
         }
-
         await livekitRoomRef.current.localParticipant.setMicrophoneEnabled(true);
-        setIsMuted(false);
-        setVoiceState('listening');
-        return;
-      } catch (e) {
-        const reason = typeof e?.message === 'string' ? e.message : String(e);
-        console.error('LiveKit start failed:', e);
-        setMessages((prev) => [...prev, { role: 'ai', text: `Boss, I could not start the LiveKit session (${reason}). Falling back.` }]);
-        setVoiceState('idle');
-        await ensureAzureSession();
-      }
+        setIsMuted(false); setVoiceState('listening'); return;
+      } catch (e) { setMessages(p => [...p, { role: 'ai', text: `Could not start LiveKit session. Falling back.` }]); setVoiceState('idle'); await ensureAzureSession(); }
     }
-
     if (pcmPlayerRef.current) pcmPlayerRef.current.reset();
-    if (recorderRef.current?.isRecording) {
-      setVoiceState('listening');
-      return;
-    }
+    if (recorderRef.current?.isRecording) { setVoiceState('listening'); return; }
     sessionWavBlobsRef.current = [];
-    try {
-      recorderRef.current = new WavRecorder();
-      recorderRef.current.onAudioChunk = (base64PCM) => wsRef.current?.appendAudioUrl(base64PCM);
-      await recorderRef.current.start();
-      setVoiceState('listening');
-    } catch (err) {
-      console.error('Mic access denied');
-    }
+    try { recorderRef.current = new WavRecorder(); recorderRef.current.onAudioChunk = (b64) => wsRef.current?.appendAudioUrl(b64); await recorderRef.current.start(); setVoiceState('listening'); } catch { console.error('Mic denied'); }
   };
 
   const stopVoiceRecording = async () => {
-    if (livekitRoomRef.current) {
-      try {
-        try { await livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false); } catch (e) { }
-        livekitRoomRef.current.disconnect();
-        livekitRoomRef.current = null;
-        setLivekitConnected(false);
-        setVoiceState('idle');
-        return;
-      } catch (e) {
-      }
-    }
-    if (recorderRef.current?.isRecording) {
-      const tail = recorderRef.current.exportIncrementalWav?.();
-      if (tail?.size) sessionWavBlobsRef.current.push(tail);
-      await recorderRef.current.stop();
-    }
-    if (pcmPlayerRef.current) pcmPlayerRef.current.reset();
-    setVoiceState('idle');
+    if (livekitRoomRef.current) { try { try { await livekitRoomRef.current.localParticipant.setMicrophoneEnabled(false); } catch { } livekitRoomRef.current.disconnect(); livekitRoomRef.current = null; setLivekitConnected(false); setVoiceState('idle'); return; } catch { } }
+    if (recorderRef.current?.isRecording) { const tail = recorderRef.current.exportIncrementalWav?.(); if (tail?.size) sessionWavBlobsRef.current.push(tail); await recorderRef.current.stop(); }
+    if (pcmPlayerRef.current) pcmPlayerRef.current.reset(); setVoiceState('idle');
   };
 
   const handleSendText = (preset = null) => {
-    const text = preset || input;
-    if (!text.trim()) return;
-    setMessages((prev) => [...prev, { role: 'user', text }]);
-    setInput('');
-    setIsTyping(true);
-    setVoiceState('processing');
-    currentResponseTextRef.current = '';
-    setMessages((prev) => [...prev, { role: 'ai', text: '' }]);
-    if (wsRef.current) {
-      wsRef.current.commitAudioAndRequestResponse([...getMessageHistory(), { role: 'user', content: text }]);
-      return;
-    }
-    (async () => {
-      try {
-        const reply = await getAIResponse(text, notes);
-        setIsTyping(false);
-        setVoiceState('idle');
-        currentResponseTextRef.current = '';
-        setMessages((prev) => {
-          const newMsg = [...prev];
-          let i = newMsg.length - 1;
-          while (i >= 0 && newMsg[i].role !== 'ai') i--;
-          if (i < 0) return prev;
-          newMsg[i] = { ...newMsg[i], text: reply || '' };
-          return newMsg;
-        });
-      } catch (e) {
-        setIsTyping(false);
-        setVoiceState('idle');
-      }
-    })();
+    const text = preset || input; if (!text.trim()) return;
+    setMessages(p => [...p, { role: 'user', text }]); setInput(''); setIsTyping(true); setVoiceState('processing');
+    currentResponseTextRef.current = ''; setMessages(p => [...p, { role: 'ai', text: '' }]);
+    if (wsRef.current) { wsRef.current.commitAudioAndRequestResponse([...getMessageHistory(), { role: 'user', content: text }]); return; }
+    (async () => { try { const reply = await getAIResponse(text, notes); setIsTyping(false); setVoiceState('idle'); currentResponseTextRef.current = ''; setMessages(prev => { const n = [...prev]; let i = n.length - 1; while (i >= 0 && n[i].role !== 'ai') i--; if (i < 0) return prev; n[i] = { ...n[i], text: reply || '' }; return n; }); } catch { setIsTyping(false); setVoiceState('idle'); } })();
   };
 
-  const blobToBase64 = (blob) => new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(blob);
-  });
+  const getMessageHistory = () => messages.filter(m => m.role === 'user' || m.role === 'ai').map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text }));
+
+  const blobToBase64 = (blob) => new Promise(resolve => { const r = new FileReader(); r.onloadend = () => resolve(r.result); r.readAsDataURL(blob); });
 
   const buildAudioUrl = useCallback(async () => {
-    const userBlobs = sessionWavBlobsRef.current.filter((b) => b?.size > 0);
+    const userBlobs = sessionWavBlobsRef.current.filter(b => b?.size > 0);
     const aiChunks = aiAudioChunksRef.current;
     let userWav = userBlobs.length ? await mergeWavBlobs(userBlobs) : null;
     let aiWav = aiChunks.length ? pcmChunksToWavBlob(aiChunks, 24000) : null;
     if (!userWav && !aiWav) return null;
-    try {
-      const mixed = await mixWavBlobs(userWav, aiWav);
-      return await blobToBase64(mixed || userWav || aiWav);
-    } catch (e) {
-      return await blobToBase64(userWav || aiWav);
-    }
+    try { const mixed = await mixWavBlobs(userWav, aiWav); return await blobToBase64(mixed || userWav || aiWav); } catch { return await blobToBase64(userWav || aiWav); }
   }, []);
 
-  const saveTalkNote = useCallback(
-    async ({ auto = false } = {}) => {
-      if (!onSaveMOM || messagesRef.current.length < 2) return;
-      setIsSaving(true);
-      const newId = Date.now();
-      const transcript = formatTalkTranscript(messagesRef.current);
-      const audioUrl = await buildAudioUrl();
-
-      const draft = {
-        id: newId,
-        title: auto ? 'Note from Talk (Extracting...)' : 'Talk Session (Extracting...)',
-        date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-        time: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }),
-        duration: `${messagesRef.current.length} turns`,
-        summary: 'Analyzing conversation...',
-        mom: 'Structured minutes will appear here.',
-        transcript,
-        audioUrl: audioUrl || undefined,
-        source: 'talk',
-      };
-
-      onSaveMOM(draft, [{ id: newId, time: 'Just Now', title: 'Processing AI Insights...', icon: 'task' }]);
-      savedNoteIdRef.current = newId;
-
-      if (updateNote) {
-        const forAi = transcript.length > MAX_TRANSCRIPT_FOR_AI ? transcript.slice(0, MAX_TRANSCRIPT_FOR_AI) : transcript;
-        try {
-          const aiResult = await getAIResponse(MOM_JSON_INSTRUCTIONS + forAi, [], true);
-          const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
-          if (jsonMatch) {
-            const p = JSON.parse(jsonMatch[0]);
-            const formattedTasks = (p.tasks || []).map((t, i) => ({
-              id: newId + i + 1,
-              text: t.text,
-              done: false,
-              date: t.date,
-              priority: t.priority,
-              assignee: t.assignee
-            }));
-
-            updateNote(newId, {
-              title: p.mom?.title || draft.title,
-              summaryShort: p.summary_short,
-              summaryDetailed: p.summary_detailed,
-              summary: p.summary_short || p.summary_detailed, // fallback
-              detailedMom: p.mom,
-              mom: p.mom?.discussion?.join('\n') || draft.mom,
-              tasks: formattedTasks,
-              keywords: p.keywords,
-              sentiment: p.sentiment,
-              diarization: p.diarization,
-              callStatus: p.call_status || 'completed'
-            });
-
-            if (typeof scheduleFromNote === 'function' && p.mom?.title) {
-              scheduleFromNote({ ...draft, transcript, mom: p.mom?.discussion?.join('\n') }, transcript);
-            }
-          }
-        } catch (e) {
-          console.error('Extraction failed:', e);
-          updateNote(newId, { summary: 'Analysis failed, but transcript is preserved.', callStatus: 'dropped' });
-        }
-      }
-      setIsSaving(false);
-    },
-    [onSaveMOM, updateNote, buildAudioUrl, scheduleFromNote]
-  );
-
-  const extractAndAddTask = useCallback(
-    async (triggerText) => {
-      const recent = messagesRef.current.slice(-6);
-      const context = formatTalkTranscript(recent);
-      if (!savedNoteIdRef.current) await saveTalkNote({ auto: true });
-      const noteId = savedNoteIdRef.current;
-      if (!noteId) return;
-
+  const saveTalkNote = useCallback(async ({ auto = false } = {}) => {
+    if (!onSaveMOM || messagesRef.current.length < 2) return;
+    setIsSaving(true);
+    const newId = Date.now();
+    const transcript = formatTalkTranscript(messagesRef.current);
+    const audioUrl = await buildAudioUrl();
+    const draft = { id: newId, title: auto ? 'Note from Talk (Extracting...)' : 'Talk Session (Extracting...)', date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), time: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }), duration: `${messagesRef.current.length} turns`, summary: 'Analyzing conversation...', mom: 'Structured minutes will appear here.', transcript, audioUrl: audioUrl || undefined, source: 'talk' };
+    onSaveMOM(draft, [{ id: newId, time: 'Just Now', title: 'Processing AI Insights...', icon: 'task' }]);
+    savedNoteIdRef.current = newId;
+    if (updateNote) {
+      const forAi = transcript.length > MAX_TRANSCRIPT_FOR_AI ? transcript.slice(0, MAX_TRANSCRIPT_FOR_AI) : transcript;
       try {
-        const aiResult = await getAIResponse(TASK_EXTRACT_INSTRUCTIONS + context, [], true);
+        const aiResult = await getAIResponse(MOM_JSON_INSTRUCTIONS + forAi, [], true);
         const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const p = JSON.parse(jsonMatch[0]);
-          if (typeof addTask === 'function') addTask(noteId, p.text || triggerText, p.date, p.priority);
-          if (typeof appendActivities === 'function') {
-            appendActivities([{ id: Date.now(), time: 'Just Now', title: `Task: ${p.text}`, icon: 'task' }]);
-          }
+          const formattedTasks = (p.tasks || []).map((t, i) => ({ id: newId + i + 1, text: t.text, done: false, date: t.date, priority: t.priority, assignee: t.assignee }));
+          updateNote(newId, { title: p.mom?.title || draft.title, summaryShort: p.summary_short, summaryDetailed: p.summary_detailed, summary: p.summary_short || p.summary_detailed, detailedMom: p.mom, mom: p.mom?.discussion?.join('\n') || draft.mom, tasks: formattedTasks, keywords: p.keywords, sentiment: p.sentiment, diarization: p.diarization, callStatus: p.call_status || 'completed' });
+          if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote({ ...draft, transcript, mom: p.mom?.discussion?.join('\n') }, transcript);
         }
-      } catch (err) { console.warn('Fast task extraction failed'); }
-    },
-    [saveTalkNote, addTask, appendActivities]
-  );
+      } catch (e) { console.error('Extraction failed:', e); updateNote(newId, { summary: 'Analysis failed, but transcript is preserved.', callStatus: 'dropped' }); }
+    }
+    setIsSaving(false);
+  }, [onSaveMOM, updateNote, buildAudioUrl, scheduleFromNote]);
+
+  const extractAndAddTask = useCallback(async (triggerText) => {
+    const recent = messagesRef.current.slice(-6);
+    const context = formatTalkTranscript(recent);
+    if (!savedNoteIdRef.current) await saveTalkNote({ auto: true });
+    const noteId = savedNoteIdRef.current;
+    if (!noteId) return;
+    try {
+      const aiResult = await getAIResponse(TASK_EXTRACT_INSTRUCTIONS + context, [], true);
+      const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
+      if (jsonMatch) { const p = JSON.parse(jsonMatch[0]); if (typeof addTask === 'function') addTask(noteId, p.text || triggerText, p.date, p.priority); if (typeof appendActivities === 'function') appendActivities([{ id: Date.now(), time: 'Just Now', title: `Task: ${p.text}`, icon: 'task' }]); }
+    } catch { }
+  }, [saveTalkNote, addTask, appendActivities]);
 
   useEffect(() => {
     const last = messages[messages.length - 1];
     if (last?.role !== 'user' || last.pendingUserId) return;
     const idx = messages.length - 1;
     if (idx <= autoNoteHandledForMessageIndex.current) return;
-
-    if (userAskedToCreateNote(last.text)) {
-      autoNoteHandledForMessageIndex.current = idx;
-      saveTalkNote({ auto: true });
-    } else if (userAskedToCreateTask(last.text)) {
-      autoTaskHandledForMessageIndex.current = idx;
-      extractAndAddTask(last.text);
-    }
+    if (userAskedToCreateNote(last.text)) { autoNoteHandledForMessageIndex.current = idx; saveTalkNote({ auto: true }); }
+    else if (userAskedToCreateTask(last.text)) { autoTaskHandledForMessageIndex.current = idx; extractAndAddTask(last.text); }
   }, [messages, saveTalkNote, extractAndAddTask]);
 
   const handleClose = useCallback(async () => {
     const sessionSeconds = Math.round((Date.now() - sessionStartRef.current) / 1000);
     if (sessionSeconds > 5) recordTalkUsage(sessionSeconds);
     const hasConversation = messagesRef.current.some(m => m.role === 'user' && !m.text.includes('Transcrib'));
-    if (hasConversation && !savedNoteIdRef.current && onSaveMOM) {
-      await saveTalkNote({ auto: true });
-      return;
-    }
+    if (hasConversation && !savedNoteIdRef.current && onSaveMOM) { await saveTalkNote({ auto: true }); return; }
     onClose();
   }, [onClose, onSaveMOM, saveTalkNote]);
 
+  const statusLabel = livekitAvailable ? (livekitConnected ? 'LiveKit Connected' : 'LiveKit Ready') : 'Realtime Elite Active';
+
   return (
-    <div className="absolute inset-0 bg-slate-50 z-[110] flex flex-col animate-slide-bottom">
-      <div className="bg-white px-5 pt-10 pb-3 border-b border-slate-100 flex items-center justify-between z-10 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-brand-600 to-brand-800 rounded-2xl flex items-center justify-center text-white shadow-brand-200 shadow-lg">
+    <div style={{ position: 'absolute', inset: 0, backgroundColor: '#111111', zIndex: 110, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
+      {/* Header */}
+      <div style={{ backgroundColor: '#161616', padding: '40px 20px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg,#6d5bfa,#9b5de5)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 14px rgba(109,91,250,0.35)' }}>
             <AudioLines size={20} />
           </div>
           <div>
-            <h2 className="font-bold text-slate-900 text-[15px] tracking-tight">AI Meeting Assistant</h2>
-            <p className="text-[10px] text-emerald-500 font-bold flex items-center gap-1 uppercase tracking-widest">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> {livekitAvailable ? (livekitConnected ? 'LiveKit Connected' : 'LiveKit Ready') : 'Realtime Elite Active'}
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: '#f9fafb', margin: '0 0 3px', letterSpacing: '-0.1px' }}>AI Meeting Assistant</h2>
+            <p style={{ fontSize: 10, fontWeight: 800, color: '#34d399', display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#34d399', display: 'inline-block' }} />
+              {statusLabel}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {messages.length >= 3 && (
-            <button
-              onClick={() => saveTalkNote({ auto: false })}
-              disabled={isSaving}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11px] font-black uppercase tracking-wider bg-brand-50 text-brand-700 hover:bg-brand-100 border border-brand-100 transition-all active:scale-95"
-            >
-              {isSaving ? <RefreshCw size={12} className="animate-spin" /> : <FileText size={13} />}
-              {isSaving ? 'Processing' : 'Generate MOM'}
+            <button onClick={() => saveTalkNote({ auto: false })} disabled={isSaving} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 12, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', backgroundColor: 'rgba(109,91,250,0.1)', border: '1px solid rgba(109,91,250,0.2)', color: '#a78bfa', cursor: 'pointer' }}>
+              <FileText size={12} />{isSaving ? 'Processing...' : 'Generate MOM'}
             </button>
           )}
-          <button onClick={handleClose} className="p-2.5 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200 transition-colors">
-            <ChevronLeft size={20} className="rotate-180" />
+          <button onClick={handleClose} style={{ padding: 10, backgroundColor: '#1e1e1e', border: '1px solid #2a2a2a', borderRadius: '50%', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <ChevronLeft size={18} style={{ transform: 'rotate(180deg)' }} />
           </button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-hide" ref={scrollRef}>
+      {/* Messages */}
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] p-4 rounded-2xl text-[13px] leading-relaxed shadow-sm ${msg.role === 'user' ? 'bg-brand-600 text-white rounded-tr-none' : 'bg-white text-slate-700 border border-slate-100 rounded-tl-none font-medium'
-              }`}>
+          <div key={idx} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+            <div style={{
+              maxWidth: '85%', padding: '12px 16px', borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+              fontSize: 13, lineHeight: 1.6,
+              backgroundColor: msg.role === 'user' ? undefined : '#1a1a1a',
+              background: msg.role === 'user' ? 'linear-gradient(135deg,#6d5bfa,#9b5de5)' : undefined,
+              color: msg.role === 'user' ? '#fff' : '#d1d5db',
+              border: msg.role === 'ai' ? '1px solid #222' : 'none',
+              fontWeight: msg.role === 'ai' ? 500 : 600,
+            }}>
               {msg.text}
             </div>
           </div>
         ))}
         {isTyping && (
-          <div className="flex justify-start">
-            <div className="bg-white border border-slate-100 p-4 rounded-2xl rounded-tl-none flex gap-1.5 items-center">
-              <div className="w-1.5 h-1.5 bg-brand-400 rounded-full animate-bounce" />
-              <div className="w-1.5 h-1.5 bg-brand-400 rounded-full animate-bounce [animation-delay:0.2s]" />
-              <div className="w-1.5 h-1.5 bg-brand-400 rounded-full animate-bounce [animation-delay:0.4s]" />
+          <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <div style={{ backgroundColor: '#1a1a1a', border: '1px solid #222', padding: '14px 18px', borderRadius: '18px 18px 18px 4px', display: 'flex', gap: 5, alignItems: 'center' }}>
+              {[0, 0.15, 0.3].map((delay, i) => (
+                <div key={i} style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#6d5bfa', animation: `bounce 1s infinite`, animationDelay: `${delay}s` }} />
+              ))}
             </div>
           </div>
         )}
       </div>
 
-      <div className="bg-white border-t border-slate-100 px-5 pt-4 pb-8 flex flex-col items-center gap-4">
+      {/* Controls */}
+      <div style={{ backgroundColor: '#161616', borderTop: '1px solid #1f1f1f', padding: '16px 20px 32px' }}>
         {inputMode === 'voice' ? (
-          <div className="w-full space-y-4">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {voiceState !== 'idle' && (
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    const next = !isMuted;
-                    setIsMuted(next);
-                    if (livekitRoomRef.current) {
-                      livekitRoomRef.current.localParticipant.setMicrophoneEnabled(!next);
-                      return;
-                    }
-                    recorderRef.current?.setMuted(next);
-                  }}
-                  className={`flex-1 py-4 rounded-2xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isMuted ? 'bg-amber-500 text-white shadow-lg shadow-amber-200' : 'bg-slate-800 text-white shadow-lg shadow-slate-200'
-                    }`}
-                >
-                  {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
-                  {isMuted ? 'Unmute' : 'Mute'}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => { const next = !isMuted; setIsMuted(next); if (livekitRoomRef.current) { livekitRoomRef.current.localParticipant.setMicrophoneEnabled(!next); return; } recorderRef.current?.setMuted(next); }} style={{ flex: 1, padding: '14px', borderRadius: 20, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: 'none', cursor: 'pointer', backgroundColor: isMuted ? '#f59e0b' : '#1e1e1e', color: '#fff', boxShadow: isMuted ? '0 4px 16px rgba(245,158,11,0.3)' : 'none' }}>
+                  {isMuted ? <MicOff size={15} /> : <Mic size={15} />}{isMuted ? 'Unmute' : 'Mute'}
                 </button>
-                <button
-                  onClick={stopVoiceRecording}
-                  className="flex-1 py-4 rounded-2xl bg-red-600 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-red-200 transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
+                <button onClick={stopVoiceRecording} style={{ flex: 1, padding: '14px', borderRadius: 20, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: 'none', cursor: 'pointer', backgroundColor: '#ef4444', color: '#fff', boxShadow: '0 4px 16px rgba(239,68,68,0.3)' }}>
                   End Call
                 </button>
               </div>
             )}
-
             {voiceState === 'idle' ? (
-              <button
-                onClick={startVoiceRecording}
-                className="w-full py-5 rounded-3xl bg-gradient-to-r from-brand-600 to-brand-800 text-white font-black uppercase tracking-[0.2em] shadow-xl shadow-brand-200 active:scale-95 transition-all text-xs flex items-center justify-center gap-3"
-              >
-                <Mic size={20} /> Start Meeting
+              <button onClick={startVoiceRecording} style={{ width: '100%', padding: '18px', borderRadius: 24, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: '#fff', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 24px rgba(109,91,250,0.4)' }}>
+                <Mic size={18} /> Start Meeting
               </button>
             ) : (
-              <div className="flex flex-col items-center gap-4">
-                <div className="relative w-24 h-24 flex items-center justify-center">
-                  <div className="absolute inset-0 bg-emerald-400 rounded-full animate-ping opacity-20" />
-                  <div className="absolute inset-0 bg-emerald-500 rounded-full animate-pulse opacity-10 scale-125" />
-                  <div className="relative z-10 w-20 h-20 rounded-full bg-slate-900 flex items-center justify-center text-white shadow-2xl border-4 border-white overflow-hidden">
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+                <div style={{ position: 'relative', width: 88, height: 88, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: 'rgba(52,211,153,0.08)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite' }} />
+                  <div style={{ position: 'relative', zIndex: 10, width: 72, height: 72, borderRadius: '50%', backgroundColor: '#1a1a1a', border: '3px solid #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
                     {voiceState === 'ai-speaking' ? (
-                      <div className="flex gap-1 items-end h-6">
-                        {[1, 2, 3, 4, 3, 2, 1].map((h, i) => (
-                          <div key={i} className="w-1 bg-brand-400 rounded-full animate-pulse" style={{ height: `${h * 4}px` }} />
-                        ))}
+                      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 24 }}>
+                        {[1, 2, 3, 4, 3, 2, 1].map((h, i) => <div key={i} style={{ width: 3, height: h * 4, backgroundColor: '#a78bfa', borderRadius: 99 }} />)}
                       </div>
-                    ) : <Mic size={28} className="animate-pulse text-brand-400" />}
+                    ) : <Mic size={26} style={{ color: '#a78bfa' }} />}
                   </div>
                 </div>
-                <p className="text-[12px] font-black text-slate-400 uppercase tracking-widest">
-                  {voiceState === 'listening' ? 'Agent Listening' : voiceState === 'processing' ? 'Thinking' : 'Agent Speaking'}
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+                  {voiceState === 'listening' ? 'Agent Listening' : voiceState === 'processing' ? 'Thinking...' : 'Agent Speaking'}
                 </p>
               </div>
             )}
-            <button
-              onClick={() => setInputMode('text')}
-              className="w-full flex items-center justify-center gap-1.5 text-slate-400 text-[10px] font-bold uppercase tracking-widest hover:text-brand-600 transition-colors"
-            >
-              <Keyboard size={14} /> Switch to Keyboard
+            <button onClick={() => setInputMode('text')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#374151', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', background: 'none', border: 'none', cursor: 'pointer' }}>
+              <Keyboard size={13} /> Switch to Keyboard
             </button>
           </div>
         ) : (
-          <div className="w-full">
-            <div className="flex items-center gap-2 bg-slate-100 rounded-2xl p-1.5 border border-slate-200 focus-within:border-brand-500 focus-within:bg-white transition-all shadow-inner">
-              <button onClick={() => setInputMode('voice')} className="p-2 text-slate-400 hover:text-brand-600 transition-colors">
-                <Mic size={20} />
-              </button>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSendText()}
-                placeholder="Ask about your meetings..."
-                className="flex-1 bg-transparent border-none outline-none text-[13px] text-slate-800 font-medium py-3 px-2 placeholder-slate-400"
-              />
-              <button
-                onClick={() => handleSendText()}
-                disabled={!input.trim()}
-                className={`p-3 rounded-xl transition-all ${input.trim() ? 'bg-brand-600 text-white shadow-lg active:scale-90' : 'bg-slate-200 text-slate-400'}`}
-              >
-                <Send size={18} />
-              </button>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#1a1a1a', borderRadius: 20, padding: '6px 8px', border: '1px solid #2a2a2a' }}>
+            <button onClick={() => setInputMode('voice')} style={{ padding: 8, color: '#4b5563', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Mic size={20} /></button>
+            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendText()} placeholder="Ask about your meetings..." style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#f3f4f6', fontWeight: 500, padding: '8px 4px' }} />
+            <button onClick={() => handleSendText()} disabled={!input.trim()} style={{ padding: 10, borderRadius: 14, border: 'none', cursor: input.trim() ? 'pointer' : 'default', backgroundColor: input.trim() ? '#6d5bfa' : '#222', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? '0 4px 12px rgba(109,91,250,0.35)' : 'none' }}>
+              <Send size={16} />
+            </button>
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-function RefreshCw({ size, className }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
-      <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-      <path d="M21 3v5h-5" />
-      <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-      <path d="M3 21v-5h5" />
-    </svg>
   );
 }

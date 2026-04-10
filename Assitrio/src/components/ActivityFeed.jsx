@@ -6,7 +6,7 @@ import LiveTimer from './LiveTimer';
 export default function ActivityFeed({ activities = [], notes = [] }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
-  const [activeTab, setActiveTab] = useState('all'); // 'all' or 'events'
+  const [activeTab, setActiveTab] = useState('all');
 
   const upcomingEvents = useMemo(() => {
     const events = [];
@@ -16,7 +16,6 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
           const creationDate = new Date(`${n.date} ${n.time}`);
           const parsed = chrono.parse(t.date, creationDate);
           const targetDateObj = parsed.length > 0 ? parsed[0].start.date() : null;
-
           events.push({
             id: t.id,
             time: n.time,
@@ -49,21 +48,183 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
 
   const getIcon = (iconType) => {
     switch (iconType) {
-      case 'mic': return <Mic size={12} className="text-brand-500" />;
-      case 'calendar': return <Calendar size={12} className="text-blue-500" />;
-      case 'shield': return <Shield size={12} className="text-emerald-500" />;
-      case 'task': return <CheckCircle2 size={12} className="text-amber-500" />;
-      default: return <Mic size={12} className="text-brand-500" />;
+      case 'mic': return <Mic size={12} style={{ color: '#a78bfa' }} />;
+      case 'calendar': return <Calendar size={12} style={{ color: '#60a5fa' }} />;
+      case 'shield': return <Shield size={12} style={{ color: '#34d399' }} />;
+      case 'task': return <CheckCircle2 size={12} style={{ color: '#fbbf24' }} />;
+      default: return <Mic size={12} style={{ color: '#a78bfa' }} />;
     }
   };
 
+  /* ── inline styles matching CraftNote dark theme ── */
+  const s = {
+    root: {
+      minHeight: '100%',
+      backgroundColor: '#111111',
+      padding: '20px 16px 32px',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+    },
+    header: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 20,
+      paddingTop: 24,
+    },
+    title: {
+      fontSize: 22,
+      fontWeight: 800,
+      color: '#ffffff',
+      letterSpacing: '-0.3px',
+      margin: 0,
+    },
+    searchBtn: {
+      width: 38,
+      height: 38,
+      borderRadius: '50%',
+      backgroundColor: '#1e1e1e',
+      border: '1px solid #2a2a2a',
+      color: '#9ca3af',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+    },
+    tabRow: {
+      display: 'flex',
+      gap: 8,
+      marginBottom: 16,
+      backgroundColor: '#1a1a1a',
+      borderRadius: 14,
+      padding: 4,
+    },
+    tabActive: {
+      flex: 1,
+      padding: '9px 0',
+      fontSize: 12,
+      fontWeight: 700,
+      borderRadius: 11,
+      border: 'none',
+      cursor: 'pointer',
+      background: 'linear-gradient(135deg, #6d5bfa 0%, #9b5de5 100%)',
+      color: '#ffffff',
+      boxShadow: '0 2px 8px rgba(109,91,250,0.4)',
+    },
+    tabInactive: {
+      flex: 1,
+      padding: '9px 0',
+      fontSize: 12,
+      fontWeight: 600,
+      borderRadius: 11,
+      border: 'none',
+      cursor: 'pointer',
+      background: 'transparent',
+      color: '#6b7280',
+    },
+    searchBar: {
+      display: 'flex',
+      alignItems: 'center',
+      backgroundColor: '#1e1e1e',
+      borderRadius: 14,
+      border: '1px solid #2a2a2a',
+      padding: '10px 14px',
+      marginBottom: 16,
+      gap: 10,
+    },
+    searchInput: {
+      flex: 1,
+      background: 'transparent',
+      border: 'none',
+      outline: 'none',
+      fontSize: 13,
+      color: '#e5e7eb',
+    },
+    emptyBox: {
+      backgroundColor: '#1a1a1a',
+      borderRadius: 18,
+      border: '1px solid #222',
+      padding: '36px 24px',
+      textAlign: 'center',
+      marginTop: 16,
+    },
+    timeline: {
+      position: 'relative',
+      marginLeft: 14,
+    },
+    timelineLine: {
+      position: 'absolute',
+      left: 0,
+      top: 10,
+      bottom: 0,
+      width: 1,
+      backgroundColor: '#2a2a2a',
+    },
+    item: {
+      position: 'relative',
+      paddingLeft: 28,
+      marginBottom: 20,
+    },
+    dot: {
+      position: 'absolute',
+      left: 0,
+      top: 6,
+      width: 9,
+      height: 9,
+      borderRadius: '50%',
+      border: '2px solid #3a3a3a',
+      backgroundColor: '#111111',
+      transform: 'translateX(-50%)',
+      zIndex: 10,
+    },
+    itemMeta: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 6,
+      marginBottom: 6,
+    },
+    itemTime: {
+      fontSize: 10,
+      fontWeight: 700,
+      color: '#a78bfa',
+      textTransform: 'uppercase',
+      letterSpacing: '0.1em',
+    },
+    card: {
+      backgroundColor: '#1a1a1a',
+      borderRadius: 16,
+      border: '1px solid #222222',
+      padding: '14px 16px',
+    },
+    cardTop: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: 8,
+      marginBottom: 4,
+    },
+    cardTitle: {
+      fontSize: 13,
+      fontWeight: 700,
+      color: '#f3f4f6',
+      lineHeight: 1.4,
+      margin: 0,
+    },
+    cardSub: {
+      fontSize: 11,
+      color: '#6b7280',
+      lineHeight: 1.5,
+      margin: 0,
+    },
+  };
+
   return (
-    <div className="p-5 animate-fade-in min-h-full">
-      <div className="flex justify-between items-center mb-6 pt-6">
-        <h1 className="text-[22px] font-extrabold text-slate-900 tracking-tight">Activity</h1>
+    <div style={s.root}>
+      {/* Header */}
+      <div style={s.header}>
+        <h1 style={s.title}>Activity</h1>
         <button
           onClick={() => { setShowSearch(!showSearch); if (showSearch) setSearchQuery(''); }}
-          className="p-2.5 bg-white rounded-full shadow-sm border border-slate-100 text-slate-500 hover:text-brand-600 hover:border-brand-200 transition-all"
+          style={s.searchBtn}
           aria-label="Toggle search"
         >
           {showSearch ? <X size={16} /> : <Search size={16} />}
@@ -71,20 +232,16 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-5">
+      <div style={s.tabRow}>
         <button
           onClick={() => setActiveTab('all')}
-          className={`flex-1 py-2 text-[12px] font-bold rounded-xl transition-colors ${
-            activeTab === 'all' ? 'bg-brand-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-100 hover:bg-slate-50'
-          }`}
+          style={activeTab === 'all' ? s.tabActive : s.tabInactive}
         >
           All Activity
         </button>
         <button
           onClick={() => setActiveTab('events')}
-          className={`flex-1 py-2 text-[12px] font-bold rounded-xl transition-colors ${
-            activeTab === 'events' ? 'bg-brand-600 text-white shadow-md' : 'bg-white text-slate-500 border border-slate-100 hover:bg-slate-50'
-          }`}
+          style={activeTab === 'events' ? s.tabActive : s.tabInactive}
         >
           Upcoming Events
         </button>
@@ -92,48 +249,47 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
 
       {/* Search Bar */}
       {showSearch && (
-        <div className="mb-5 animate-slide-up">
-          <div className="flex items-center bg-white rounded-2xl border border-slate-200 px-4 py-3 focus-within:border-brand-400 transition-colors shadow-sm">
-            <Search size={16} className="text-slate-300 mr-3 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search activities..."
-              className="flex-1 bg-transparent border-none outline-none text-[13px] text-slate-800 placeholder-slate-400"
-              autoFocus
-            />
-          </div>
+        <div style={s.searchBar}>
+          <Search size={15} style={{ color: '#4b5563', flexShrink: 0 }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search activities..."
+            style={s.searchInput}
+            autoFocus
+          />
         </div>
       )}
 
-      {/* Timeline */}
+      {/* Empty State */}
       {filteredActivities.length === 0 ? (
-        <div className="bg-white p-8 rounded-2xl border border-slate-100 text-center shadow-sm mt-4">
-          <Search size={28} className="text-slate-200 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-slate-600">No matching activities</p>
-          <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
+        <div style={s.emptyBox}>
+          <Search size={28} style={{ color: '#374151', margin: '0 auto 12px', display: 'block' }} />
+          <p style={{ fontSize: 14, fontWeight: 600, color: '#9ca3af', margin: '0 0 4px' }}>
+            No matching activities
+          </p>
+          <p style={{ fontSize: 12, color: '#4b5563', margin: 0 }}>
+            Try a different search term
+          </p>
         </div>
       ) : (
-        <div className="space-y-6 relative ml-4">
-          {/* Timeline line */}
-          <div className="absolute left-0 top-3 bottom-0 w-px bg-slate-200" />
-
+        /* Timeline */
+        <div style={s.timeline}>
+          <div style={s.timelineLine} />
           {filteredActivities.map((act, i) => (
-            <div key={act.id} className="relative pl-8 group" style={{ animationDelay: `${i * 60}ms` }}>
-              {/* Timeline dot */}
-              <div className="absolute left-0 top-1.5 w-[9px] h-[9px] rounded-full border-2 border-slate-200 bg-white -translate-x-1/2 z-10 group-hover:border-brand-500 group-hover:bg-brand-50 transition-colors" />
-
-              <div className="flex items-center gap-2 mb-1.5">
-                <p className="text-[10px] text-brand-600 font-bold uppercase tracking-[0.1em]">{act.time}</p>
+            <div key={act.id} style={s.item}>
+              <div style={s.dot} />
+              <div style={s.itemMeta}>
+                <span style={s.itemTime}>{act.time}</span>
                 {getIcon(act.icon)}
               </div>
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start gap-2 mb-1">
-                  <p className="text-[13px] font-bold text-slate-800 leading-tight">{act.title}</p>
+              <div style={s.card}>
+                <div style={s.cardTop}>
+                  <p style={s.cardTitle}>{act.title}</p>
                   {act.targetDateObj && <LiveTimer targetDate={act.targetDateObj} />}
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{act.sub}</p>
+                <p style={s.cardSub}>{act.sub}</p>
               </div>
             </div>
           ))}

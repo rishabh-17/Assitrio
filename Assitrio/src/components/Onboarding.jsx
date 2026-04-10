@@ -1,79 +1,142 @@
 import React, { useState } from 'react';
-import { Mic, Zap, Search, Target, ChevronRight } from 'lucide-react';
+import { Mic, Zap, Target, ChevronRight } from 'lucide-react';
 
 export default function Onboarding({ onComplete }) {
   const [step, setStep] = useState(0);
 
   const slides = [
     {
-      icon: <Target size={48} className="text-brand-500" />,
+      icon: <Target size={44} style={{ color: '#a78bfa' }} />,
       title: 'Welcome to Assistrio',
-      desc: 'Your calm, AI-powered memory and task assistant. We remember the details so you don\'t have to.',
-      color: 'bg-brand-50'
+      desc: "Your calm, AI-powered memory and task assistant. We remember the details so you don't have to.",
+      accent: 'rgba(109,91,250,0.15)',
+      glow: 'rgba(109,91,250,0.08)',
     },
     {
-      icon: <Mic size={48} className="text-emerald-500" />,
+      icon: <Mic size={44} style={{ color: '#34d399' }} />,
       title: 'Just Speak',
       desc: 'Tap "Give Command" to log a quick thought, or "Talk to AI" to have a conversation. We extract tasks automatically.',
-      color: 'bg-emerald-50'
+      accent: 'rgba(52,211,153,0.15)',
+      glow: 'rgba(52,211,153,0.08)',
     },
     {
-      icon: <Zap size={48} className="text-amber-500" />,
-      title: 'Smart locker',
+      icon: <Zap size={44} style={{ color: '#fbbf24' }} />,
+      title: 'Smart Locker',
       desc: 'Everything is securely stored, summarized, and organized in your Locker. Fully searchable and accessible.',
-      color: 'bg-amber-50'
-    }
+      accent: 'rgba(251,191,36,0.15)',
+      glow: 'rgba(251,191,36,0.08)',
+    },
   ];
 
-  const handleNext = () => {
-    if (step < slides.length - 1) {
-      setStep(prev => prev + 1);
-    } else {
-      onComplete();
-    }
-  };
+  const s = slides[step];
 
   return (
-    <div className="fixed inset-0 bg-slate-50 z-[200] flex flex-col sm:border-x sm:border-slate-800 animate-fade-in font-sans">
-      <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-        
-        {/* Soft Background Blob */}
-        <div className={`absolute top-1/4 -right-16 w-64 h-64 rounded-full blur-3xl opacity-40 transition-colors duration-700 ${slides[step].color}`} />
-        <div className={`absolute bottom-1/4 -left-16 w-64 h-64 rounded-full blur-3xl opacity-40 transition-colors duration-700 ${slides[step].color}`} />
+    <div style={{
+      position: 'fixed', inset: 0,
+      backgroundColor: '#111111',
+      zIndex: 200,
+      display: 'flex',
+      flexDirection: 'column',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      overflow: 'hidden',
+    }}>
+      {/* Glow blobs */}
+      <div style={{
+        position: 'absolute', top: '20%', right: -80,
+        width: 280, height: 280, borderRadius: '50%',
+        backgroundColor: s.glow, filter: 'blur(60px)',
+        transition: 'background-color 0.6s',
+      }} />
+      <div style={{
+        position: 'absolute', bottom: '25%', left: -80,
+        width: 280, height: 280, borderRadius: '50%',
+        backgroundColor: s.glow, filter: 'blur(60px)',
+        transition: 'background-color 0.6s',
+      }} />
 
-        <div className="relative z-10 flex flex-col items-center text-center max-w-sm w-full animate-slide-up" key={step}>
-          <div className={`w-24 h-24 rounded-full ${slides[step].color} border-4 border-white shadow-xl flex items-center justify-center mb-10 transition-transform hover:scale-105`}>
-            {slides[step].icon}
+      {/* Content */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: '32px 28px', position: 'relative', zIndex: 10,
+      }}>
+        <div key={step} style={{
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', textAlign: 'center', maxWidth: 320,
+        }}>
+          <div style={{
+            width: 96, height: 96,
+            borderRadius: 28,
+            backgroundColor: s.accent,
+            border: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 40,
+            boxShadow: `0 12px 40px ${s.glow}`,
+            transition: 'background-color 0.4s',
+          }}>
+            {s.icon}
           </div>
-          
-          <h1 className="text-3xl font-extrabold text-slate-900 mb-4 tracking-tight">
-            {slides[step].title}
+
+          <h1 style={{
+            fontSize: 28, fontWeight: 800,
+            color: '#f9fafb', letterSpacing: '-0.4px',
+            marginBottom: 16, lineHeight: 1.2,
+          }}>
+            {s.title}
           </h1>
-          
-          <p className="text-base text-slate-500 leading-relaxed px-4">
-            {slides[step].desc}
+
+          <p style={{
+            fontSize: 15, color: '#6b7280',
+            lineHeight: 1.7, padding: '0 8px',
+          }}>
+            {s.desc}
           </p>
         </div>
       </div>
 
-      {/* Navigation Area - strictly adheres to 8pt grid with large accessible targets */}
-      <div className="bg-white p-8 border-t border-slate-100 flex flex-col items-center gap-6 pb-12">
-        {/* Pagination Dots */}
-        <div className="flex gap-2">
+      {/* Bottom nav area */}
+      <div style={{
+        backgroundColor: '#161616',
+        borderTop: '1px solid #1f1f1f',
+        padding: '28px 28px 48px',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: 24,
+      }}>
+        {/* Dots */}
+        <div style={{ display: 'flex', gap: 8 }}>
           {slides.map((_, i) => (
-            <div 
-              key={i} 
-              className={`h-2 rounded-full transition-all duration-300 ${i === step ? 'w-8 bg-brand-600' : 'w-2 bg-slate-200'}`} 
-            />
+            <div key={i} style={{
+              height: 6, borderRadius: 99,
+              width: i === step ? 28 : 6,
+              background: i === step
+                ? 'linear-gradient(135deg, #6d5bfa, #9b5de5)'
+                : '#2a2a2a',
+              transition: 'all 0.3s',
+            }} />
           ))}
         </div>
 
-        <button 
-          onClick={handleNext}
-          className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold h-14 rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition-all shadow-md mt-2"
-          aria-label={step === slides.length - 1 ? 'Get Started' : 'Next Step'}
+        <button
+          onClick={() => step < slides.length - 1 ? setStep(s => s + 1) : onComplete()}
+          style={{
+            width: '100%',
+            height: 54,
+            borderRadius: 18,
+            border: 'none',
+            cursor: 'pointer',
+            background: 'linear-gradient(135deg, #6d5bfa 0%, #9b5de5 100%)',
+            color: '#fff',
+            fontSize: 14,
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            boxShadow: '0 8px 24px rgba(109,91,250,0.4)',
+            letterSpacing: '0.02em',
+          }}
         >
-          {step === slides.length - 1 ? 'Get Started' : 'Continue'} 
+          {step === slides.length - 1 ? 'Get Started' : 'Continue'}
           <ChevronRight size={18} />
         </button>
       </div>
