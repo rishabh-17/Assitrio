@@ -47,6 +47,8 @@ export function getApiBaseUrlCandidates() {
 }
 
 export function getApiBaseUrl() {
+    const fromEnv = normalizeApiBaseUrl(import.meta.env?.VITE_API_BASE_URL);
+    if (fromEnv) return fromEnv;
     try {
         const saved = localStorage.getItem(API_BASE_URL_STORAGE_KEY);
         const normalized = normalizeApiBaseUrl(saved);

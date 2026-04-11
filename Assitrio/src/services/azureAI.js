@@ -5,6 +5,22 @@ const AZURE_REALTIME_ENDPOINT = import.meta.env?.VITE_AZURE_REALTIME_ENDPOINT ||
 const AZURE_REALTIME_KEY = import.meta.env?.VITE_AZURE_REALTIME_KEY || '';
 
 /**
+ * Read the JWT from localStorage and return auth headers.
+ * Mirrors the Axios interceptor in apiService.js so that raw fetch calls
+ * also include the Bearer token.
+ */
+function getAuthHeaders(extra = {}) {
+  try {
+    const session = localStorage.getItem('assistrio-session-v2');
+    if (session) {
+      const { token } = JSON.parse(session);
+      if (token) return { Authorization: `Bearer ${token}`, ...extra };
+    }
+  } catch (e) { /* ignore */ }
+  return { ...extra };
+}
+
+/**
  * Build a system prompt with the "Advanced AI Meeting Assistant" persona.
  * Adheres to strict voice behavior, real-time processing requirements, and professional persona.
  */
@@ -121,7 +137,7 @@ async function getAIResponse(userMessage, notes = [], isExtraction = false) {
   try {
     const response = await fetch(`${getApiBaseUrl()}/ai/azure-openai`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         systemPrompt: buildSystemPrompt(notes),
         messages: [
@@ -150,7 +166,7 @@ async function callAzureRealtime(userMessage, notes = [], isExtraction = false, 
   try {
     const response = await fetch(`${getApiBaseUrl()}/ai/azure-realtime`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         systemPrompt: buildSystemPrompt(notes),
         userMessage,
@@ -314,6 +330,7 @@ async function transcribeWavOnce(audioBlob) {
   }));
   const response = await fetch(`${getApiBaseUrl()}/ai/azure-stt`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     body: formData
   });
   if (response.ok) {

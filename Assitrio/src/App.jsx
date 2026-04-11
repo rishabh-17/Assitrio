@@ -69,7 +69,7 @@ function AdminExperience({ currentUser, logout }) {
 
   return (
     <div className="flex justify-center bg-zinc-900 h-screen w-full font-sans text-slate-800">
-      <div className="w-full max-w-md bg-slate-50 h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
+      <div className="w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
         
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pb-28 scrollbar-hide">
@@ -298,7 +298,7 @@ function AuthenticatedApp({ currentUser, logout }) {
 
   return (
     <div className="flex justify-center bg-zinc-900 h-screen w-full font-sans text-slate-800">
-      <div className="w-full max-w-md bg-slate-50 h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
+      <div className="w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-zinc-800 shadow-2xl">
 
         {!hasSeenOnboarding ? (
           <Onboarding onComplete={() => setHasSeenOnboarding(true)} />
