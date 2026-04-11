@@ -73,6 +73,19 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
     }
   };
 
+  const displayTime = (act) => {
+    if (act?.time) return act.time;
+    const raw = act?.createdAt || act?.created;
+    if (!raw) return 'Recent';
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return 'Recent';
+    try {
+      return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return 'Recent';
+    }
+  };
+
   const priorityColor = (p) => {
     if (p === 'Critical') return '#ef4444';
     if (p === 'Important') return '#f59e0b';
@@ -172,7 +185,7 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
               <div key={act.id} style={s.item}>
                 <div style={s.dot} />
                 <div style={s.itemMeta}>
-                  <span style={s.itemTime}>{act.time || 'Recent'}</span>
+                  <span style={s.itemTime}>{displayTime(act)}</span>
                   {getActivityIcon(act.icon)}
                 </div>
                 <div style={s.actCard}>

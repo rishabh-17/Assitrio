@@ -70,29 +70,29 @@ function AdminExperience({ currentUser, logout }) {
   return (
     <div className="flex justify-center bg-zinc-900 h-screen w-full font-sans text-slate-800">
       <div className="w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
-        
+
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pb-28 scrollbar-hide">
           {currentTab === 'dashboard' && <SuperAdminDashboard />}
           {currentTab === 'transactions' && <PaymentHistory isAdmin={true} isOverlay={false} />}
           {currentTab === 'management' && <AdminManagement />}
           {currentTab === 'profile' && (
-            <Profile 
-              user={currentUser} 
-              onLogout={logout} 
-              deletedNotes={[]} 
-              restoreNote={() => {}} 
-              permanentlyDeleteNote={() => {}} 
+            <Profile
+              user={currentUser}
+              onLogout={logout}
+              deletedNotes={[]}
+              restoreNote={() => { }}
+              permanentlyDeleteNote={() => { }}
               notesCount={0}
             />
           )}
         </div>
 
         {/* Navigation */}
-        <BottomNav 
-          currentTab={currentTab} 
+        <BottomNav
+          currentTab={currentTab}
           onTabChange={setCurrentTab}
-          userRole="admin" 
+          userRole="admin"
         />
       </div>
     </div>
@@ -108,7 +108,7 @@ function AuthenticatedApp({ currentUser, logout }) {
   const [overlay, setOverlay] = useState(null);
   const [calendarToastEvents, setCalendarToastEvents] = useState([]);
   const bootstrapDone = useRef(false);
-  
+
   // Sync scheduled tasks natively to Android/iOS notifications
   useNotificationSync(notes);
   // Trigger native permission models for microphone, storage, and notifications
@@ -119,11 +119,11 @@ function AuthenticatedApp({ currentUser, logout }) {
       noteService.getAll().then(data => {
         if (Array.isArray(data)) setNotes(data);
       }).catch(console.error);
-      
+
       noteService.getDeleted().then(data => {
         if (Array.isArray(data)) setDeletedNotes(data);
       }).catch(console.error);
-      
+
       activityService.getAll().then(data => {
         if (Array.isArray(data)) setActivities(data);
       }).catch(console.error);
@@ -142,28 +142,39 @@ function AuthenticatedApp({ currentUser, logout }) {
     if (!note) return;
 
     const updatedTasks = (note.tasks || []).map(t => t.id === taskId ? { ...t, done: !t.done } : t);
-    
+
     // Update local state
     setNotes(prev => prev.map(n => n.id === noteId ? { ...n, tasks: updatedTasks } : n));
 
     // Update backend
     try {
-      await noteService.update(noteId, { tasks: updatedTasks });
+      const updated = await noteService.update(noteId, { tasks: updatedTasks });
+      const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
+      if (createdActivities.length) {
+        setActivities(prev => [...createdActivities, ...prev]);
+      }
     } catch (err) {
       console.error('Failed to update task:', err);
     }
-  }, [notes, setNotes]);
+  }, [notes, setNotes, setActivities]);
 
   const addNoteAndActivity = useCallback(async (newNote, newActivityOrActivities) => {
     setNotes(prev => [newNote, ...prev]);
-    
+
     try {
-      await noteService.create(newNote);
-      
+      const created = await noteService.create(newNote);
+      const createdActivities = Array.isArray(created?.activities) ? created.activities : [];
+      if (createdActivities.length) {
+        setActivities(prev => [...createdActivities, ...prev]);
+      }
+
       if (newActivityOrActivities) {
         if (Array.isArray(newActivityOrActivities)) {
-          await activityService.createBulk(newActivityOrActivities);
-          setActivities(prev => [...newActivityOrActivities, ...prev]);
+          const items = newActivityOrActivities.filter(Boolean);
+          if (items.length) {
+            await activityService.createBulk(items);
+            setActivities(prev => [...items, ...prev]);
+          }
         } else {
           await activityService.create(newActivityOrActivities);
           setActivities(prev => [newActivityOrActivities, ...prev]);
@@ -177,25 +188,29 @@ function AuthenticatedApp({ currentUser, logout }) {
   const updateNote = useCallback(async (noteId, updates) => {
     setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates } : n));
     try {
-      await noteService.update(noteId, updates);
+      const updated = await noteService.update(noteId, updates);
+      const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
+      if (createdActivities.length) {
+        setActivities(prev => [...createdActivities, ...prev]);
+      }
     } catch (err) {
       console.error('Failed to update note:', err);
     }
-  }, [setNotes]);
+  }, [setNotes, setActivities]);
 
   const deleteNote = useCallback(async (id) => {
     const noteToDelete = notes.find(n => n.id === id);
     if (!noteToDelete) return;
-    
+
     setNotes(prev => prev.filter(n => n.id !== id));
     setDeletedNotes(prev => [noteToDelete, ...prev]);
-    
-    const delActivity = { id: Date.now(), time: 'Just Now', title: `Deleted Note: ${noteToDelete.title}`, icon: 'archive', type: 'delete', noteId: noteToDelete.id };
-    setActivities(prev => [delActivity, ...prev]);
 
     try {
-      await noteService.delete(id);
-      await activityService.create(delActivity);
+      const resp = await noteService.delete(id);
+      const createdActivities = Array.isArray(resp?.activities) ? resp.activities : [];
+      if (createdActivities.length) {
+        setActivities(prev => [...createdActivities, ...prev]);
+      }
     } catch (err) {
       console.error('Failed to delete note:', err);
     }
@@ -204,16 +219,16 @@ function AuthenticatedApp({ currentUser, logout }) {
   const restoreNote = useCallback(async (id) => {
     const noteToRestore = deletedNotes.find(n => n.id === id);
     if (!noteToRestore) return;
-    
+
     setDeletedNotes(prev => prev.filter(n => n.id !== id));
     setNotes(prev => [noteToRestore, ...prev]);
-    
-    const resActivity = { id: Date.now(), time: 'Just Now', title: `Restored Note: ${noteToRestore.title}`, icon: 'shield', type: 'restore', noteId: noteToRestore.id };
-    setActivities(prev => [resActivity, ...prev]);
 
     try {
-      await noteService.restore(id);
-      await activityService.create(resActivity);
+      const resp = await noteService.restore(id);
+      const createdActivities = Array.isArray(resp?.activities) ? resp.activities : [];
+      if (createdActivities.length) {
+        setActivities(prev => [...createdActivities, ...prev]);
+      }
     } catch (err) {
       console.error('Failed to restore note:', err);
     }
@@ -222,50 +237,63 @@ function AuthenticatedApp({ currentUser, logout }) {
   const permanentlyDeleteNote = useCallback(async (id) => {
     setDeletedNotes(prev => prev.filter(n => n.id !== id));
     try {
-        await noteService.permanentlyDelete(id);
+      const resp = await noteService.permanentlyDelete(id);
+      const createdActivities = Array.isArray(resp?.activities) ? resp.activities : [];
+      if (createdActivities.length) {
+        setActivities(prev => [...createdActivities, ...prev]);
+      }
     } catch (err) {
-        console.error('Failed to permanently delete note:', err);
+      console.error('Failed to permanently delete note:', err);
     }
-  }, [setDeletedNotes]);
+  }, [setDeletedNotes, setActivities]);
 
-  const addTask = useCallback((noteId, taskText) => {
+  const addTask = useCallback(async (noteId, taskText) => {
     const newTask = { id: Date.now(), text: taskText, done: false };
     setNotes(prev => prev.map(n => {
       if (n.id === noteId) {
         const updatedTasks = [...(n.tasks || []), newTask];
-        noteService.update(noteId, { tasks: updatedTasks });
+        noteService.update(noteId, { tasks: updatedTasks }).then((updated) => {
+          const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
+          if (createdActivities.length) setActivities(prev => [...createdActivities, ...prev]);
+        }).catch(console.error);
         return { ...n, tasks: updatedTasks };
       }
       return n;
     }));
-  }, [setNotes]);
+  }, [setNotes, setActivities]);
 
-  const updateTask = useCallback((noteId, taskId, newText) => {
+  const updateTask = useCallback(async (noteId, taskId, newText) => {
     setNotes(prev => prev.map(n => {
       if (n.id === noteId) {
         const updatedTasks = (n.tasks || []).map(t => t.id === taskId ? { ...t, text: newText } : t);
-        noteService.update(noteId, { tasks: updatedTasks });
+        noteService.update(noteId, { tasks: updatedTasks }).then((updated) => {
+          const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
+          if (createdActivities.length) setActivities(prev => [...createdActivities, ...prev]);
+        }).catch(console.error);
         return { ...n, tasks: updatedTasks };
       }
       return n;
     }));
-  }, [setNotes]);
+  }, [setNotes, setActivities]);
 
-  const deleteTask = useCallback((noteId, taskId) => {
+  const deleteTask = useCallback(async (noteId, taskId) => {
     setNotes(prev => prev.map(n => {
       if (n.id === noteId) {
         const updatedTasks = (n.tasks || []).filter(t => t.id !== taskId);
-        noteService.update(noteId, { tasks: updatedTasks });
+        noteService.update(noteId, { tasks: updatedTasks }).then((updated) => {
+          const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
+          if (createdActivities.length) setActivities(prev => [...createdActivities, ...prev]);
+        }).catch(console.error);
         return { ...n, tasks: updatedTasks };
       }
       return n;
     }));
-  }, [setNotes]);
+  }, [setNotes, setActivities]);
 
   const scheduleFromNote = useCallback(async (noteId) => {
     const note = notes.find(n => n.id === noteId);
     if (!note) return;
-    
+
     try {
       const result = await attemptAutoSchedule(note);
       if (result?.success) {
@@ -331,9 +359,9 @@ function AuthenticatedApp({ currentUser, logout }) {
               )}
               {currentTab === 'activity' && <ActivityFeed activities={activities} notes={notes} />}
               {currentTab === 'profile' && (
-                <Profile 
-                  user={currentUser} 
-                  onLogout={logout} 
+                <Profile
+                  user={currentUser}
+                  onLogout={logout}
                   deletedNotes={deletedNotes}
                   restoreNote={restoreNote}
                   permanentlyDeleteNote={permanentlyDeleteNote}
@@ -353,13 +381,14 @@ function AuthenticatedApp({ currentUser, logout }) {
               <ListenSimulator
                 onClose={() => setOverlay(null)}
                 onSaveDraft={(note) => {
-                  addNoteAndActivity(note, []);
+                  addNoteAndActivity(note, null);
                   setOverlay(null);
                 }}
                 updateNote={updateNote}
                 appendActivities={(items) => {
                   if (!items?.length) return;
                   setActivities((prev) => [...items, ...prev]);
+                  activityService.createBulk(items).catch(console.error);
                 }}
                 scheduleFromNote={scheduleFromNote}
               />
@@ -377,6 +406,7 @@ function AuthenticatedApp({ currentUser, logout }) {
                 appendActivities={(items) => {
                   if (!items?.length) return;
                   setActivities((prev) => [...items, ...prev]);
+                  activityService.createBulk(items).catch(console.error);
                 }}
                 scheduleFromNote={scheduleFromNote}
               />
@@ -397,15 +427,15 @@ function AuthenticatedApp({ currentUser, logout }) {
             )}
 
             {calendarToastEvents.length > 0 && (
-              <CalendarToast 
-                events={calendarToastEvents} 
-                onClose={() => setCalendarToastEvents([])} 
+              <CalendarToast
+                events={calendarToastEvents}
+                onClose={() => setCalendarToastEvents([])}
               />
-            ) }
+            )}
 
-            <BottomNav 
-              currentTab={currentTab} 
-              onTabChange={(tab) => { setOverlay(null); setCurrentTab(tab); }} 
+            <BottomNav
+              currentTab={currentTab}
+              onTabChange={(tab) => { setOverlay(null); setCurrentTab(tab); }}
               onActionClick={() => setOverlay({ type: 'menu' })}
             />
           </>

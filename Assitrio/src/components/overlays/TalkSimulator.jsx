@@ -223,7 +223,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     const transcript = formatTalkTranscript(messagesRef.current);
     const audioUrl = await buildAudioUrl();
     const draft = { id: newId, title: auto ? 'Note from Talk (Extracting...)' : 'Talk Session (Extracting...)', date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), time: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }), duration: `${messagesRef.current.length} turns`, summary: 'Analyzing conversation...', mom: 'Structured minutes will appear here.', transcript, audioUrl: audioUrl || undefined, source: 'talk' };
-    onSaveMOM(draft, [{ id: newId, time: 'Just Now', title: 'Processing AI Insights...', icon: 'task' }]);
+    onSaveMOM(draft, null);
     savedNoteIdRef.current = newId;
     if (updateNote) {
       const forAi = transcript.length > MAX_TRANSCRIPT_FOR_AI ? transcript.slice(0, MAX_TRANSCRIPT_FOR_AI) : transcript;
@@ -250,7 +250,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     try {
       const aiResult = await getAIResponse(TASK_EXTRACT_INSTRUCTIONS + context, [], true);
       const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
-      if (jsonMatch) { const p = JSON.parse(jsonMatch[0]); if (typeof addTask === 'function') addTask(noteId, p.text || triggerText, p.date, p.priority); if (typeof appendActivities === 'function') appendActivities([{ id: Date.now(), time: 'Just Now', title: `Task: ${p.text}`, icon: 'task' }]); }
+      if (jsonMatch) { const p = JSON.parse(jsonMatch[0]); if (typeof addTask === 'function') addTask(noteId, p.text || triggerText, p.date, p.priority); }
     } catch { }
   }, [saveTalkNote, addTask, appendActivities]);
 
