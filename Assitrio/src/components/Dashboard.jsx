@@ -224,8 +224,8 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
               <React.Fragment key={ctx.id}>
                 {idx > 0 && <div style={{ height: 1, backgroundColor: '#222', margin: '12px 0' }} />}
                 <div style={{ display: 'flex', gap: 14, alignItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 0.6 : 1 }} onClick={() => openNote(ctx.noteId, 'mom')}>
-                  <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: idx === 0 ? 'rgba(109,91,250,0.12)' : '#1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: idx === 0 ? '#a78bfa' : '#4b5563' }}>{ctx.time}</span>
+                  <div style={{ minWidth: 56, height: 44, borderRadius: 12, backgroundColor: idx === 0 ? 'rgba(109,91,250,0.12)' : '#1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 6px' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: idx === 0 ? '#a78bfa' : '#4b5563', whiteSpace: 'nowrap', textAlign: 'center', lineHeight: 1.2 }}>{ctx.time}</span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -260,7 +260,7 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
               <span>•</span>
               <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{note.source === 'talk' ? <MessageCircle size={10} /> : <Mic size={10} />}{note.source === 'talk' ? 'Talk' : 'Listen'}</span>
               <span>•</span>
-              <span>{note.tasks.length} tasks</span>
+              <span>{(note.tasks || []).length} tasks</span>
             </div>
           </div>
         ))}

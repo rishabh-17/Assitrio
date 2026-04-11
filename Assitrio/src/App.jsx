@@ -141,7 +141,7 @@ function AuthenticatedApp({ currentUser, logout }) {
     const note = notes.find(n => n.id === noteId);
     if (!note) return;
 
-    const updatedTasks = note.tasks.map(t => t.id === taskId ? { ...t, done: !t.done } : t);
+    const updatedTasks = (note.tasks || []).map(t => t.id === taskId ? { ...t, done: !t.done } : t);
     
     // Update local state
     setNotes(prev => prev.map(n => n.id === noteId ? { ...n, tasks: updatedTasks } : n));
@@ -232,7 +232,7 @@ function AuthenticatedApp({ currentUser, logout }) {
     const newTask = { id: Date.now(), text: taskText, done: false };
     setNotes(prev => prev.map(n => {
       if (n.id === noteId) {
-        const updatedTasks = [...n.tasks, newTask];
+        const updatedTasks = [...(n.tasks || []), newTask];
         noteService.update(noteId, { tasks: updatedTasks });
         return { ...n, tasks: updatedTasks };
       }
@@ -243,7 +243,7 @@ function AuthenticatedApp({ currentUser, logout }) {
   const updateTask = useCallback((noteId, taskId, newText) => {
     setNotes(prev => prev.map(n => {
       if (n.id === noteId) {
-        const updatedTasks = n.tasks.map(t => t.id === taskId ? { ...t, text: newText } : t);
+        const updatedTasks = (n.tasks || []).map(t => t.id === taskId ? { ...t, text: newText } : t);
         noteService.update(noteId, { tasks: updatedTasks });
         return { ...n, tasks: updatedTasks };
       }
@@ -254,7 +254,7 @@ function AuthenticatedApp({ currentUser, logout }) {
   const deleteTask = useCallback((noteId, taskId) => {
     setNotes(prev => prev.map(n => {
       if (n.id === noteId) {
-        const updatedTasks = n.tasks.filter(t => t.id !== taskId);
+        const updatedTasks = (n.tasks || []).filter(t => t.id !== taskId);
         noteService.update(noteId, { tasks: updatedTasks });
         return { ...n, tasks: updatedTasks };
       }
@@ -308,7 +308,7 @@ function AuthenticatedApp({ currentUser, logout }) {
             <div className="flex-1 overflow-y-auto pb-28 scrollbar-hide">
               {currentTab === 'dashboard' && (
                 <Dashboard
-                  pendingTasks={notes.flatMap(n => n.tasks.filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
+                  pendingTasks={notes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
                   notes={notes}
                   deletedNotes={deletedNotes}
                   toggleTask={toggleTask}
@@ -320,8 +320,8 @@ function AuthenticatedApp({ currentUser, logout }) {
               {currentTab === 'locker' && (
                 <Locker
                   notes={notes}
-                  pendingTasks={notes.flatMap(n => n.tasks.filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
-                  completedTasks={notes.flatMap(n => n.tasks.filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
+                  pendingTasks={notes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
+                  completedTasks={notes.flatMap(n => (n.tasks || []).filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
                   toggleTask={toggleTask}
                   openNote={(id, tab = 'summary') => setOverlay({ type: 'note', id, tab })}
                   deleteNote={deleteNote}
