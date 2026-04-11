@@ -326,7 +326,7 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
               </div>
             ) : (
               <div>
-                <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 16, textAlign: 'center' }}>Items here can be restored or permanently destroyed.</p>
+                <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 16, textAlign: 'center' }}>Deleted items can be restored to your library.</p>
                 {deletedNotes.map(note => (
                   <div key={note.id} style={{ backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: 16, marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
@@ -336,10 +336,7 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
                       </div>
                       <Trash2 size={16} style={{ color: '#ef4444', opacity: 0.5, marginTop: 2, flexShrink: 0 }} />
                     </div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button onClick={() => restoreNote(note.id)} style={{ flex: 1, padding: '10px', borderRadius: 10, backgroundColor: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><RefreshCw size={12} />Restore</button>
-                      <button onClick={() => permanentlyDeleteNote(note.id)} style={{ flex: 1, padding: '10px', borderRadius: 10, backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><Trash2 size={12} />Destroy</button>
-                    </div>
+                    <button onClick={() => restoreNote(note.id)} style={{ width: '100%', padding: '10px', borderRadius: 10, backgroundColor: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><RefreshCw size={12} />Restore Note</button>
                   </div>
                 ))}
               </div>

@@ -190,7 +190,7 @@ function AuthenticatedApp({ currentUser, logout }) {
     setNotes(prev => prev.filter(n => n.id !== id));
     setDeletedNotes(prev => [noteToDelete, ...prev]);
     
-    const delActivity = { id: Date.now(), time: 'Just Now', title: `Deleted Note: ${noteToDelete.title}`, icon: 'archive' };
+    const delActivity = { id: Date.now(), time: 'Just Now', title: `Deleted Note: ${noteToDelete.title}`, icon: 'archive', type: 'delete', noteId: noteToDelete.id };
     setActivities(prev => [delActivity, ...prev]);
 
     try {
@@ -208,7 +208,7 @@ function AuthenticatedApp({ currentUser, logout }) {
     setDeletedNotes(prev => prev.filter(n => n.id !== id));
     setNotes(prev => [noteToRestore, ...prev]);
     
-    const resActivity = { id: Date.now(), time: 'Just Now', title: `Restored Note: ${noteToRestore.title}`, icon: 'archive' };
+    const resActivity = { id: Date.now(), time: 'Just Now', title: `Restored Note: ${noteToRestore.title}`, icon: 'shield', type: 'restore', noteId: noteToRestore.id };
     setActivities(prev => [resActivity, ...prev]);
 
     try {

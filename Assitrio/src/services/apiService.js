@@ -47,10 +47,18 @@ export const noteService = {
 };
 
 export const activityService = {
-    getAll: async () => api.get('/activities'),
+    // Returns all activities for the user (up to 500). Unwraps the { activities, total } envelope.
+    getAll: async (params = {}) => api.get('/activities', { params }),
+    // Filtered fetch: pass { type, from, to, q, limit, skip }
+    getFiltered: async (params) => api.get('/activities', { params }),
+    // Stats breakdown: { total, byType, recordings, tasks, schedules, dailyLast30 }
+    getStats: async () => api.get('/activities/stats'),
+    // Create a single log entry
     create: async (activity) => api.post('/activities', activity),
+    // Bulk create
     createBulk: async (activities) => api.post('/activities/bulk', activities),
-    clearAll: async () => api.delete('/activities')
+    // Clear all or scoped by type: clearAll('recording')
+    clearAll: async (type) => api.delete('/activities', { params: type ? { type } : {} })
 };
 
 export const userService = {
