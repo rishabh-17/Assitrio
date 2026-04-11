@@ -26,6 +26,10 @@ export default function LoginScreen({ onLogin, onGoogleLogin }) {
   }, [onGoogleLogin]);
 
   useEffect(() => {
+    try { localStorage.removeItem('assistrio-session-v2'); } catch(e) {}
+  }, []);
+
+  useEffect(() => {
     if (gsiInitialized.current) return;
     const init = () => {
       if (!window.google?.accounts?.id) return;
@@ -42,7 +46,7 @@ export default function LoginScreen({ onLogin, onGoogleLogin }) {
     if (!username.trim() || !password.trim()) { setError('Please fill in all fields'); return; }
     setIsLoading(true);
     await new Promise(r => setTimeout(r, 600));
-    const result = await onLogin(mode, username.trim(), password, displayName.trim());
+    const result = await onLogin(mode, username.trim().toLowerCase(), password, displayName.trim());
     if (!result.success) setError(result.error);
     setIsLoading(false);
   };

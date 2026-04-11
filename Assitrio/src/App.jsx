@@ -25,8 +25,16 @@ import { attemptAutoSchedule, formatMeetingForDisplay } from './services/autoSch
 import { isGoogleConnected, isMicrosoftConnected } from './services/calendarService';
 import { noteService, activityService } from './services/apiService';
 
+import SharedRecordingAuth from './components/SharedRecordingAuth';
+
 // Wrapper that provides auth context
 export default function App() {
+  const path = window.location?.pathname || '';
+  if (path.startsWith('/recording/')) {
+    const shareId = path.split('/')[2];
+    return <SharedRecordingAuth shareId={shareId} />;
+  }
+
   return (
     <AuthProvider>
       <AppContent />
@@ -182,12 +190,16 @@ function AuthenticatedApp({ currentUser, logout }) {
     setNotes(prev => prev.filter(n => n.id !== id));
     setDeletedNotes(prev => [noteToDelete, ...prev]);
     
+    const delActivity = { id: Date.now(), time: 'Just Now', title: `Deleted Note: ${noteToDelete.title}`, icon: 'archive' };
+    setActivities(prev => [delActivity, ...prev]);
+
     try {
       await noteService.delete(id);
+      await activityService.create(delActivity);
     } catch (err) {
       console.error('Failed to delete note:', err);
     }
-  }, [notes, setNotes, setDeletedNotes]);
+  }, [notes, setNotes, setDeletedNotes, setActivities]);
 
   const restoreNote = useCallback(async (id) => {
     const noteToRestore = deletedNotes.find(n => n.id === id);
@@ -196,12 +208,16 @@ function AuthenticatedApp({ currentUser, logout }) {
     setDeletedNotes(prev => prev.filter(n => n.id !== id));
     setNotes(prev => [noteToRestore, ...prev]);
     
+    const resActivity = { id: Date.now(), time: 'Just Now', title: `Restored Note: ${noteToRestore.title}`, icon: 'archive' };
+    setActivities(prev => [resActivity, ...prev]);
+
     try {
       await noteService.restore(id);
+      await activityService.create(resActivity);
     } catch (err) {
       console.error('Failed to restore note:', err);
     }
-  }, [deletedNotes, setNotes, setDeletedNotes]);
+  }, [deletedNotes, setNotes, setDeletedNotes, setActivities]);
 
   const permanentlyDeleteNote = useCallback(async (id) => {
     setDeletedNotes(prev => prev.filter(n => n.id !== id));
@@ -292,21 +308,22 @@ function AuthenticatedApp({ currentUser, logout }) {
             <div className="flex-1 overflow-y-auto pb-28 scrollbar-hide">
               {currentTab === 'dashboard' && (
                 <Dashboard
-                  pendingTasks={notes.flatMap(n => n.tasks.filter(t => !t.done))}
+                  pendingTasks={notes.flatMap(n => n.tasks.filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
                   notes={notes}
                   deletedNotes={deletedNotes}
                   toggleTask={toggleTask}
-                  openNote={(id) => setOverlay({ type: 'note', id })}
+                  deleteTask={deleteTask}
+                  openNote={(id, tab = 'summary') => setOverlay({ type: 'note', id, tab })}
                   goToLocker={() => setCurrentTab('locker')}
                 />
               )}
               {currentTab === 'locker' && (
                 <Locker
                   notes={notes}
-                  pendingTasks={notes.flatMap(n => n.tasks.filter(t => !t.done))}
-                  completedTasks={notes.flatMap(n => n.tasks.filter(t => t.done))}
+                  pendingTasks={notes.flatMap(n => n.tasks.filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
+                  completedTasks={notes.flatMap(n => n.tasks.filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
                   toggleTask={toggleTask}
-                  openNote={(id) => setOverlay({ type: 'note', id })}
+                  openNote={(id, tab = 'summary') => setOverlay({ type: 'note', id, tab })}
                   deleteNote={deleteNote}
                   deleteTask={deleteTask}
                   updateTask={updateTask}
@@ -367,6 +384,7 @@ function AuthenticatedApp({ currentUser, logout }) {
             {overlay?.type === 'note' && currentNote && (
               <NoteDetail
                 note={currentNote}
+                initialTab={overlay.tab}
                 onClose={() => setOverlay(null)}
                 toggleTask={toggleTask}
                 deleteNote={deleteNote}
@@ -385,10 +403,9 @@ function AuthenticatedApp({ currentUser, logout }) {
               />
             ) }
 
-            {/* Navigation */}
             <BottomNav 
               currentTab={currentTab} 
-              onTabChange={setCurrentTab} 
+              onTabChange={(tab) => { setOverlay(null); setCurrentTab(tab); }} 
               onActionClick={() => setOverlay({ type: 'menu' })}
             />
           </>

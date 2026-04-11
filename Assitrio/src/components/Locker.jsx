@@ -49,7 +49,7 @@ export default function Locker({ notes = [], pendingTasks = [], completedTasks =
   const TaskCard = ({ task, isCompleted = false }) => {
     const isEditing = editingTaskId === task.id;
     return (
-      <div style={dk.taskCard(isCompleted, isEditing)} onClick={() => !isEditing && openNote(task.noteId)}>
+      <div style={dk.taskCard(isCompleted, isEditing)} onClick={() => !isEditing && openNote(task.noteId, 'mom')}>
         {isEditing ? (
           <div style={{ flex: 1 }}>
             <input ref={editRef} value={editTaskValue} onChange={(e) => setEditTaskValue(e.target.value)}
@@ -97,8 +97,15 @@ export default function Locker({ notes = [], pendingTasks = [], completedTasks =
       const ydStr = yd.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
       const id = item.date || item.noteDate;
       const td = id === 'Today' ? todayStr : id === 'Yesterday' ? ydStr : id;
+      
       if (dateFilter === 'today') matchesDate = td === todayStr || id === 'Today';
       else if (dateFilter === 'yesterday') matchesDate = td === ydStr || id === 'Yesterday';
+      else if (dateFilter === '7days') {
+        const itemDate = new Date(td);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        matchesDate = !isNaN(itemDate) && itemDate >= sevenDaysAgo;
+      }
     }
     return matchesSearch && matchesDate;
   });
@@ -142,6 +149,7 @@ export default function Locker({ notes = [], pendingTasks = [], completedTasks =
             <option value="all">All Dates</option>
             <option value="today">Today</option>
             <option value="yesterday">Yesterday</option>
+            <option value="7days">Last 7 Days</option>
           </select>
         </div>
         {view === 'tasks' && uniqueAssignees.length > 0 && (
@@ -174,7 +182,6 @@ export default function Locker({ notes = [], pendingTasks = [], completedTasks =
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <button onClick={(e) => { e.stopPropagation(); deleteNote(note.id); }} style={{ ...dk.actionBtn(true), padding: 8 }}><Trash2 size={14} style={{ color: '#374151' }} /></button>
                 <div onClick={() => openNote(note.id)} style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                   <ChevronRight size={15} style={{ color: '#4b5563' }} />
                 </div>

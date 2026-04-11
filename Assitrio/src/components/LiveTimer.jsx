@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 
-export default function LiveTimer({ targetDate }) {
+export default function LiveTimer({ targetDate, isDone }) {
   const [display, setDisplay] = useState({ text: '', status: 'upcoming' });
 
   useEffect(() => {
-    if (!targetDate) return;
+    if (!targetDate || isDone) return;
 
     const calculate = () => {
       const now = new Date().getTime();
@@ -38,7 +38,7 @@ export default function LiveTimer({ targetDate }) {
     calculate();
     const timerId = setInterval(calculate, 1000);
     return () => clearInterval(timerId);
-  }, [targetDate]);
+  }, [targetDate, isDone]);
 
   if (!targetDate) return null;
 
@@ -53,6 +53,15 @@ export default function LiveTimer({ targetDate }) {
     letterSpacing: '0.08em',
     whiteSpace: 'nowrap',
   };
+
+  if (isDone) {
+    return (
+      <div style={{ ...base, backgroundColor: 'rgba(52,211,153,0.12)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}>
+        <CheckCircle2 size={9} />
+        DONE
+      </div>
+    );
+  }
 
   if (display.status === 'delayed') {
     return (

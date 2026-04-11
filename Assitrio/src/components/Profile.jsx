@@ -62,6 +62,10 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSubscription, setShowSubscription] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showFAQ, setShowFAQ] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [globalConfig, setGlobalConfig] = useState(null);
   const [googleCal, setGoogleCal] = useState(calendarService.isGoogleConnected());
   const [msCal, setMsCal] = useState(calendarService.isMicrosoftConnected());
@@ -145,11 +149,18 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
         <SettingItem icon={Zap} iconBg="rgba(251,191,36,0.1)" iconColor="#fbbf24" title="Subscription & Plan" subtitle={`${usage.planName} · ${usage.totalMinutes}/${usage.minutesLimit >= 9000 ? '∞' : usage.minutesLimit} min`} onClick={() => setShowSubscription(true)} />
       </div>
 
+      {/* Data & Privacy */}
+      <p style={dk.sectionLabel}>Data & Storage</p>
+      <div style={{ marginBottom: 20 }}>
+        <SettingItem icon={Trash2} iconBg="rgba(239,68,68,0.1)" iconColor="#f87171" title="Recently Deleted" subtitle={`${deletedNotes.length} notes available`} onClick={() => setShowDeleted(true)} />
+      </div>
+
       {/* Support */}
       <p style={dk.sectionLabel}>Support</p>
       <div style={{ marginBottom: 24 }}>
-        <SettingItem icon={HelpCircle} iconBg="rgba(96,165,250,0.1)" iconColor="#60a5fa" title="Help & FAQ" subtitle="How Assistrio works" onClick={() => { }} />
-        <SettingItem icon={FileText} iconBg="rgba(167,139,250,0.1)" iconColor="#a78bfa" title="Terms & Policies" subtitle="Privacy policy, terms of use" onClick={() => { }} />
+        <SettingItem icon={HelpCircle} iconBg="rgba(96,165,250,0.1)" iconColor="#60a5fa" title="Help" subtitle="App usage instructions" onClick={() => setShowHelp(true)} />
+        <SettingItem icon={HelpCircle} iconBg="rgba(96,165,250,0.1)" iconColor="#60a5fa" title="FAQ" subtitle="Common questions & answers" onClick={() => setShowFAQ(true)} />
+        <SettingItem icon={FileText} iconBg="rgba(167,139,250,0.1)" iconColor="#a78bfa" title="Terms & Conditions" subtitle="Privacy policy, terms of use" onClick={() => setShowTerms(true)} />
       </div>
 
       {/* Logout */}
@@ -230,6 +241,109 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Help Overlay */}
+      {showHelp && (
+        <div style={dk.overlay}>
+          <div style={dk.overlayHeader}>
+            <button style={dk.overlayBack} onClick={() => setShowHelp(false)}><ChevronLeft size={19} /> Back</button>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#f9fafb' }}>App Help</span>
+            <div style={{ width: 60 }} />
+          </div>
+          <div style={dk.overlayBody}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f9fafb', marginBottom: 20 }}>How to use Assistrio</h2>
+            <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, border: '1px solid #222', color: '#d1d5db', fontSize: 14, lineHeight: 1.6 }}>
+              <p style={{ marginBottom: 16 }}>Assistrio is your intelligent AI voice assistant. Use the <b>Start Meeting</b> button on the Talk simulator to engage the AI in a live conversation.</p>
+              <p style={{ marginBottom: 16 }}>Use the <b>Listen Simulator</b> to passively record a meeting and generate an automatic transcript with action items.</p>
+              <p>Everything is securely stored inside your <b>Brain</b> tab where you can retrieve notes and tasks easily.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FAQ Overlay */}
+      {showFAQ && (
+        <div style={dk.overlay}>
+          <div style={dk.overlayHeader}>
+            <button style={dk.overlayBack} onClick={() => setShowFAQ(false)}><ChevronLeft size={19} /> Back</button>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#f9fafb' }}>FAQ</span>
+            <div style={{ width: 60 }} />
+          </div>
+          <div style={dk.overlayBody}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f9fafb', marginBottom: 20 }}>Frequently Asked Questions</h2>
+            <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, border: '1px solid #222', color: '#d1d5db', fontSize: 14, lineHeight: 1.6, marginBottom: 12 }}>
+              <p style={{ fontWeight: 800, color: '#f3f4f6', marginBottom: 4 }}>Are my recordings private?</p>
+              <p>Yes, everything is encrypted and only accessible by you via the app or through specific secure links you share.</p>
+            </div>
+            <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, border: '1px solid #222', color: '#d1d5db', fontSize: 14, lineHeight: 1.6 }}>
+              <p style={{ fontWeight: 800, color: '#f3f4f6', marginBottom: 4 }}>Can I sync to my Calendar?</p>
+              <p>Yes, ensure you visit the Integrations section to connect Google Calendar or Outlook.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Terms Overlay */}
+      {showTerms && (
+        <div style={dk.overlay}>
+          <div style={dk.overlayHeader}>
+            <button style={dk.overlayBack} onClick={() => setShowTerms(false)}><ChevronLeft size={19} /> Back</button>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#f9fafb' }}>Terms & Conditions</span>
+            <div style={{ width: 60 }} />
+          </div>
+          <div style={dk.overlayBody}>
+            <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f9fafb', marginBottom: 20 }}>Terms of Service</h2>
+            <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, padding: 16, border: '1px solid #222', color: '#d1d5db', fontSize: 13, lineHeight: 1.6 }}>
+              <p style={{ marginBottom: 12 }}>By accessing Assistrio, you agree to these Terms.</p>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>1. Data Privacy</h3>
+              <p style={{ marginBottom: 12 }}>We only process information securely on our servers to generate transcripts. We do not sell your personal conversation data.</p>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>2. Subscription Terms</h3>
+              <p style={{ marginBottom: 12 }}>Unused minutes expire at the end of the billing cycle. Upgradable plans immediately prorate.</p>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 6 }}>3. Fair Use</h3>
+              <p>Bot usage limits must not be abused by automated bots. Violation can result in account suspension.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recently Deleted Overlay */}
+      {showDeleted && (
+        <div style={dk.overlay}>
+          <div style={dk.overlayHeader}>
+            <button style={dk.overlayBack} onClick={() => setShowDeleted(false)}><ChevronLeft size={19} /> Back</button>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#f9fafb' }}>Recently Deleted</span>
+            <div style={{ width: 60 }} />
+          </div>
+          <div style={dk.overlayBody}>
+            {deletedNotes.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <Trash2 size={32} style={{ color: '#2a2a2a', margin: '0 auto 16px' }} />
+                <p style={{ fontSize: 15, fontWeight: 700, color: '#9ca3af', margin: '0 0 8px' }}>No deleted memories</p>
+                <p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>Deleted notes will appear here temporarily before permanent removal.</p>
+              </div>
+            ) : (
+              <div>
+                <p style={{ fontSize: 11, color: '#6b7280', marginBottom: 16, textAlign: 'center' }}>Items here can be restored or permanently destroyed.</p>
+                {deletedNotes.map(note => (
+                  <div key={note.id} style={{ backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: 16, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0, paddingRight: 10 }}>
+                        <h4 style={{ fontSize: 15, fontWeight: 800, color: '#f3f4f6', margin: '0 0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{note.title}</h4>
+                        <p style={{ fontSize: 11, color: '#6b7280', margin: 0, display: 'flex', gap: 10 }}><span>{note.date}</span><span>Tasks: {note.tasks?.length || 0}</span></p>
+                      </div>
+                      <Trash2 size={16} style={{ color: '#ef4444', opacity: 0.5, marginTop: 2, flexShrink: 0 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => restoreNote(note.id)} style={{ flex: 1, padding: '10px', borderRadius: 10, backgroundColor: 'rgba(52,211,153,0.1)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><RefreshCw size={12} />Restore</button>
+                      <button onClick={() => permanentlyDeleteNote(note.id)} style={{ flex: 1, padding: '10px', borderRadius: 10, backgroundColor: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><Trash2 size={12} />Destroy</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

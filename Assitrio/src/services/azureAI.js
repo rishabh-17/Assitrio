@@ -9,12 +9,38 @@ const AZURE_REALTIME_KEY = import.meta.env?.VITE_AZURE_REALTIME_KEY || '';
  * Adheres to strict voice behavior, real-time processing requirements, and professional persona.
  */
 function buildSystemPrompt(notes = [], retrievedChunks = []) {
+  // Build a pending-tasks summary across all notes
+  const allPendingTasks = notes.flatMap(note =>
+    (note.tasks || [])
+      .filter(t => !t.done)
+      .map(t => `  - [${note.title}] ${t.text}${t.date ? ` (Due: ${t.date})` : ''}${t.priority && t.priority !== 'Normal' ? ` [${t.priority}]` : ''}`)
+  );
+
+  const allCompletedTasks = notes.flatMap(note =>
+    (note.tasks || [])
+      .filter(t => t.done)
+      .map(t => `  - [${note.title}] ✅ ${t.text}`)
+  );
+
+  const pendingTasksSection = allPendingTasks.length > 0
+    ? `\n### PENDING TASKS (${allPendingTasks.length} total — answer task questions from this list)\n${allPendingTasks.join('\n')}`
+    : '\n### PENDING TASKS\nAll tasks are completed! Boss is on top of everything.';
+
+  const completedTasksSection = allCompletedTasks.length > 0
+    ? `\n### COMPLETED TASKS (${allCompletedTasks.length} total)\n${allCompletedTasks.slice(0, 20).join('\n')}`
+    : '';
+
   const noteSummaries = notes.slice(0, 15).map(note => {
-    const tasks = note.tasks.map(t => `  - [${t.done ? 'x' : ' '}] ${t.text}`).join('\n');
-    return `Meeting: "${note.title}" (${note.date}, ${note.time})
-Summary: ${note.summary}
-MOM: ${note.mom}
-Tasks:\n${tasks}`;
+    const summary = note.summaryDetailed || note.summaryShort || note.summary || 'No summary available.';
+    const taskLines = (note.tasks || []).map(t =>
+      `  - [${t.done ? 'x' : ' '}] ${t.text}${t.date ? ` (Due: ${t.date})` : ''}${t.priority && t.priority !== 'Normal' ? ` [${t.priority}]` : ''}`
+    ).join('\n') || '  (no tasks)';
+
+    return `Meeting: "${note.title}" (${note.date || 'No date'}, ${note.time || ''})
+Summary: ${summary}
+MOM: ${note.mom || 'Not available'}
+Tasks (${(note.tasks || []).filter(t => !t.done).length} pending / ${(note.tasks || []).length} total):
+${taskLines}`;
   }).join('\n\n---\n\n');
 
   let ragContext = '';
@@ -43,17 +69,21 @@ You are "Assistrio Elite", an advanced AI Meeting Assistant integrated into a fu
   - Speaker 1 = User
   - Speaker 2 = AI Agent (You)
 - Support speaker-wise transcription when generating internal drafts.
+${pendingTasksSection}
+${completedTasksSection}
 
-### CORE KNOWLEDGE (Boss's Memories)
-Below are the user's past conversation summaries and relevant excerpts:
+### CORE KNOWLEDGE (Boss's Meeting Archive — ${notes.length} meetings)
+Below are the user's past conversation summaries, minutes of meetings, and full task lists:
 ${noteSummaries || 'No prior conversation history recorded.'}${ragContext}
 
 ### OPERATIONAL RULES
 1. Accuracy > Clarity > Structure > User Experience.
-2. Communicate in Roman Hinglish (Modern Hindi/English mix) for natural Indian professional context. (e.g. "Haan Boss, aapki pichli meeting ke action items ye rahe..." or "Boss, tech budget approve ho gaya hai").
-3. Use English if the user speaks pure English.
-4. If you lack information, state it clearly. Do not hallucinate.
-5. Prioritize pending tasks and deadlines in conversation when relevant.`;
+2. Communicate in standard, simple, and clear Indian English. Do NOT use Hinglish or Hindi words. Maintain a polite, professional, and helpful tone.
+3. You have FULL ACCESS to all the user's notes, tasks, and summaries above. If the user asks for total tasks count, count from the PENDING TASKS section above.
+4. If a user asks "what are my tasks?" or "what's pending?", list from the PENDING TASKS section. Be specific with meeting names.
+5. If you lack information, state it clearly. Do not hallucinate.
+6. Prioritize pending tasks and deadlines in conversation when relevant.
+7. Translate any Hindi, Hinglish, or mixed language into standard, professional business English.`;
 }
 
 async function buildContextForQuery(query, notes = [], topK = 5) {

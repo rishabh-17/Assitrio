@@ -43,6 +43,8 @@ IMPORTANT RULES:
 - ALWAYS create a proper MOM with key discussion points.
 - Sentiment should reflect the overall tone of the meeting.
 - Metadata accuracy is critical for enterprise reporting.
+- If the text explicitly asks to 'create a task' but no specifics are given, output a task with text 'Pending requirement manually requested'.
+- Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
 
 Transcript:
 `;
@@ -58,7 +60,7 @@ export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appe
       try {
         recorderRef.current = new WavRecorder();
         await recorderRef.current.start();
-        setTranscript('Elite Assistant is listening...');
+        setTranscript("I'm Listening...");
       } catch { setTranscript('Microphone access denied.'); }
     };
     init();

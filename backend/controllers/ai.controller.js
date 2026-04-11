@@ -4,6 +4,7 @@ const multer = require('multer');
 const upload = multer();
 const Config = require('../models/Config');
 const User = require('../models/User');
+const Note = require('../models/Note');
 const { AccessToken } = require('livekit-server-sdk');
 
 // Base URLs - they should have placeholders for deployment name
@@ -266,5 +267,59 @@ exports.getLivekitToken = async (req, res) => {
   } catch (err) {
     console.error('LiveKit token error:', err.message);
     res.status(500).json({ error: 'Failed to create LiveKit token' });
+  }
+};
+
+/**
+ * GET /api/ai/chat-context
+ * Returns user's notes and task data from MongoDB for chatbot context.
+ * This ensures the chatbot always has fresh, server-side data.
+ */
+exports.getChatContext = async (req, res) => {
+  try {
+    const notes = await Note.find({ userId: req.user.id, deleted: false })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .select('id title date time summary summaryShort summaryDetailed mom tasks keywords sentiment');
+
+    const pendingTasks = notes.flatMap(n =>
+      (n.tasks || []).filter(t => !t.done).map(t => ({
+        noteId: n.id,
+        noteTitle: n.title,
+        text: t.text,
+        date: t.date,
+        priority: t.priority,
+        assignee: t.assignee
+      }))
+    );
+
+    const completedTasks = notes.flatMap(n =>
+      (n.tasks || []).filter(t => t.done).map(t => ({
+        noteId: n.id,
+        noteTitle: n.title,
+        text: t.text
+      }))
+    );
+
+    res.json({
+      totalMeetings: notes.length,
+      totalPendingTasks: pendingTasks.length,
+      totalCompletedTasks: completedTasks.length,
+      pendingTasks,
+      completedTasks,
+      notes: notes.map(n => ({
+        id: n.id,
+        title: n.title,
+        date: n.date,
+        time: n.time,
+        summary: n.summaryDetailed || n.summaryShort || n.summary || '',
+        mom: n.mom || '',
+        tasks: n.tasks || [],
+        keywords: n.keywords || [],
+        sentiment: n.sentiment || ''
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 };

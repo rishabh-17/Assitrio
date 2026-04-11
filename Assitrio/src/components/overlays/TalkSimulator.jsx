@@ -10,6 +10,7 @@ import { userAskedToCreateNote, userAskedToCreateTask, userAskedToScheduleMeetin
 import { recordTalkUsage } from '../../services/usageTracker';
 import { aiService } from '../../services/apiService';
 
+
 const MAX_TRANSCRIPT_FOR_AI = 14000;
 
 const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze the provided transcript and generate a production-ready structured output in EXACTLY this JSON format (respond ONLY with the JSON block):
@@ -48,6 +49,7 @@ IMPORTANT RULES:
 - ONLY create 'tasks' from what Speaker 1 (User) committed to or explicitly requested. Ignore AI suggestions.
 - If no tasks found, set 'tasks' to [].
 - Sentiment should reflect the overall tone.
+- Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
 
 Transcript:
 `;
@@ -58,6 +60,8 @@ const TASK_EXTRACT_INSTRUCTIONS = `The user just asked to create a task. Based o
   "date": "Date if mentioned, else null",
   "priority": "Critical | Important | Normal"
 }
+
+IMPORTANT: If the user provides no specifics or context (e.g. they only say "create a task"), set "text" to "Pending requirement manually requested".
 
 Context:
 `;
@@ -98,6 +102,8 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   const livekitSessionRef = useRef(null);
   const livekitRoomRef = useRef(null);
   const livekitAudioElsRef = useRef(new Map());
+  // contextNotesRef holds the freshest notes from backend (MongoDB), falls back to prop notes
+  const contextNotesRef = useRef(notes);
   messagesRef.current = messages;
 
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [messages, isTyping]);
@@ -106,8 +112,23 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   useEffect(() => {
     pcmPlayerRef.current = new PCMPlayer(24000);
     let cancelled = false;
+
+    // Fetch fresh context from backend (notes + tasks from MongoDB)
+    const refreshBackendContext = async () => {
+      try {
+        const ctx = await aiService.getChatContext();
+        if (!cancelled && ctx?.notes?.length > 0) {
+          contextNotesRef.current = ctx.notes;
+        }
+      } catch (e) {
+        // Fallback: use prop notes if backend context fetch fails
+        contextNotesRef.current = notes;
+      }
+    };
+
     const initAzureSession = async () => {
-      const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', notes);
+      await refreshBackendContext();
+      const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', contextNotesRef.current);
       wsRef.current = new RealtimeWS(AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, ragPrompt);
       wsRef.current.onOpen = () => { };
       wsRef.current.onAudioChunk = (b64) => { setVoiceState(vs => vs !== 'ai-speaking' ? 'ai-speaking' : vs); setIsTyping(false); pcmPlayerRef.current.appendBase64(b64); aiAudioChunksRef.current.push(b64); };
@@ -128,7 +149,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
 
   const ensureAzureSession = useCallback(async () => {
     if (wsRef.current) return;
-    const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', notes);
+    const ragPrompt = await buildContextForQuery('conversation summary tasks meetings', contextNotesRef.current);
     wsRef.current = new RealtimeWS(AZURE_REALTIME_ENDPOINT, AZURE_REALTIME_KEY, ragPrompt);
     wsRef.current.onAudioChunk = (b64) => { setVoiceState(vs => vs !== 'ai-speaking' ? 'ai-speaking' : vs); setIsTyping(false); pcmPlayerRef.current.appendBase64(b64); aiAudioChunksRef.current.push(b64); };
     wsRef.current.onText = (d) => { currentResponseTextRef.current += d; setMessages(prev => { const n = [...prev]; let i = n.length - 1; while (i >= 0 && n[i].role !== 'ai') i--; if (i < 0) return prev; n[i] = { ...n[i], text: currentResponseTextRef.current }; return n; }); };
@@ -137,7 +158,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     wsRef.current.onSpeechStopped = () => { const seg = recorderRef.current?.exportIncrementalWav?.(); if (seg?.size) sessionWavBlobsRef.current.push(seg); setVoiceState('processing'); setIsTyping(true); const pid = `u-${Date.now()}`; pendingUserMsgIdRef.current = pid; setMessages(p => [...p, { role: 'user', text: '🎤 Transcribing…', pendingUserId: pid }]); currentResponseTextRef.current = ''; setMessages(p => [...p, { role: 'ai', text: '' }]); };
     wsRef.current.onUserTranscript = (text) => { const pid = pendingUserMsgIdRef.current; pendingUserMsgIdRef.current = null; const cleaned = (text || '').trim() || '(voice)'; setMessages(prev => { const idx = pid ? prev.findIndex(m => m.pendingUserId === pid) : -1; if (idx >= 0) { const c = [...prev]; c[idx] = { ...c[idx], text: cleaned, pendingUserId: undefined }; return c; } return prev; }); };
     wsRef.current.onError = () => { setMessages(p => [...p, { role: 'ai', text: 'Boss, connection dropped.' }]); setVoiceState('idle'); setIsTyping(false); };
-  }, [notes]);
+  }, []);
 
   const ensureLivekitSession = useCallback(async () => {
     if (livekitSessionRef.current) return livekitSessionRef.current;
@@ -179,7 +200,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     setMessages(p => [...p, { role: 'user', text }]); setInput(''); setIsTyping(true); setVoiceState('processing');
     currentResponseTextRef.current = ''; setMessages(p => [...p, { role: 'ai', text: '' }]);
     if (wsRef.current) { wsRef.current.commitAudioAndRequestResponse([...getMessageHistory(), { role: 'user', content: text }]); return; }
-    (async () => { try { const reply = await getAIResponse(text, notes); setIsTyping(false); setVoiceState('idle'); currentResponseTextRef.current = ''; setMessages(prev => { const n = [...prev]; let i = n.length - 1; while (i >= 0 && n[i].role !== 'ai') i--; if (i < 0) return prev; n[i] = { ...n[i], text: reply || '' }; return n; }); } catch { setIsTyping(false); setVoiceState('idle'); } })();
+    (async () => { try { const reply = await getAIResponse(text, contextNotesRef.current); setIsTyping(false); setVoiceState('idle'); currentResponseTextRef.current = ''; setMessages(prev => { const n = [...prev]; let i = n.length - 1; while (i >= 0 && n[i].role !== 'ai') i--; if (i < 0) return prev; n[i] = { ...n[i], text: reply || '' }; return n; }); } catch { setIsTyping(false); setVoiceState('idle'); } })();
   };
 
   const getMessageHistory = () => messages.filter(m => m.role === 'user' || m.role === 'ai').map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text }));
@@ -246,7 +267,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     const sessionSeconds = Math.round((Date.now() - sessionStartRef.current) / 1000);
     if (sessionSeconds > 5) recordTalkUsage(sessionSeconds);
     const hasConversation = messagesRef.current.some(m => m.role === 'user' && !m.text.includes('Transcrib'));
-    if (hasConversation && !savedNoteIdRef.current && onSaveMOM) { await saveTalkNote({ auto: true }); return; }
+    if (hasConversation && !savedNoteIdRef.current && onSaveMOM) { await saveTalkNote({ auto: true }); onClose(); return; }
     onClose();
   }, [onClose, onSaveMOM, saveTalkNote]);
 
@@ -279,6 +300,24 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
           </button>
         </div>
       </div>
+
+      {inputMode === 'voice' && voiceState !== 'idle' && (
+        <div style={{ padding: '20px 20px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, backgroundColor: '#111' }}>
+          <div style={{ position: 'relative', width: 88, height: 88, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: 'rgba(52,211,153,0.08)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite' }} />
+            <div style={{ position: 'relative', zIndex: 10, width: 72, height: 72, borderRadius: '50%', backgroundColor: '#1a1a1a', border: '3px solid #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
+              {voiceState === 'ai-speaking' ? (
+                <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 24 }}>
+                  {[1, 2, 3, 4, 3, 2, 1].map((h, i) => <div key={i} style={{ width: 3, height: h * 4, backgroundColor: '#a78bfa', borderRadius: 99 }} />)}
+                </div>
+              ) : <Mic size={26} style={{ color: '#a78bfa' }} />}
+            </div>
+          </div>
+          <p style={{ fontSize: 11, fontWeight: 800, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+            {voiceState === 'listening' ? 'Agent Listening' : voiceState === 'processing' ? 'Thinking...' : 'Agent Speaking'}
+          </p>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -322,28 +361,12 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
                 </button>
               </div>
             )}
-            {voiceState === 'idle' ? (
+            {voiceState === 'idle' && (
               <button onClick={startVoiceRecording} style={{ width: '100%', padding: '18px', borderRadius: 24, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: '#fff', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 24px rgba(109,91,250,0.4)' }}>
                 <Mic size={18} /> Start Meeting
               </button>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-                <div style={{ position: 'relative', width: 88, height: 88, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: 'rgba(52,211,153,0.08)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite' }} />
-                  <div style={{ position: 'relative', zIndex: 10, width: 72, height: 72, borderRadius: '50%', backgroundColor: '#1a1a1a', border: '3px solid #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
-                    {voiceState === 'ai-speaking' ? (
-                      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 24 }}>
-                        {[1, 2, 3, 4, 3, 2, 1].map((h, i) => <div key={i} style={{ width: 3, height: h * 4, backgroundColor: '#a78bfa', borderRadius: 99 }} />)}
-                      </div>
-                    ) : <Mic size={26} style={{ color: '#a78bfa' }} />}
-                  </div>
-                </div>
-                <p style={{ fontSize: 11, fontWeight: 800, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
-                  {voiceState === 'listening' ? 'Agent Listening' : voiceState === 'processing' ? 'Thinking...' : 'Agent Speaking'}
-                </p>
-              </div>
             )}
-            <button onClick={() => setInputMode('text')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#374151', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', background: 'none', border: 'none', cursor: 'pointer' }}>
+            <button onClick={() => setInputMode('text')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#374151', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', background: 'none', border: 'none', cursor: 'pointer', marginTop: voiceState === 'idle' ? 0 : 8 }}>
               <Keyboard size={13} /> Switch to Keyboard
             </button>
           </div>

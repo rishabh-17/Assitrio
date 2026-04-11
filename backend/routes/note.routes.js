@@ -3,6 +3,8 @@ const router = express.Router();
 const noteController = require('../controllers/note.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 
+router.post('/shared', noteController.verifySharedNote);
+
 router.use(authMiddleware);
 
 router.get('/', noteController.getNotes);

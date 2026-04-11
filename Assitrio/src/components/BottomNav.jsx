@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, LayoutGrid, MessageSquare, User, Mic, History, ShieldCheck, Settings } from 'lucide-react';
+import { Home, LayoutGrid, Brain, MessageSquare, User, Mic, History, ShieldCheck, Settings } from 'lucide-react';
 
 export default function BottomNav({ currentTab, onTabChange, onActionClick, userRole = 'user' }) {
   const navStyle = {
@@ -49,7 +49,7 @@ export default function BottomNav({ currentTab, onTabChange, onActionClick, user
       <div style={{ ...pillStyle, justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', flex: 1 }}>
           <NavButton active={currentTab === 'dashboard'} onClick={() => onTabChange('dashboard')} icon={<Home size={20} />} label="Home" />
-          <NavButton active={currentTab === 'locker'} onClick={() => onTabChange('locker')} icon={<LayoutGrid size={20} />} label="Locker" />
+          <NavButton active={currentTab === 'locker'} onClick={() => onTabChange('locker')} icon={<Brain size={20} />} label="Brain" />
         </div>
 
         {/* FAB */}

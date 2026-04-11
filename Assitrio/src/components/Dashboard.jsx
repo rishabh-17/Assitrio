@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { getUsageStats } from '../services/usageTracker';
+import { useAuth } from '../context/AuthContext';
 import * as chrono from 'chrono-node';
 import LiveTimer from './LiveTimer';
-import { Zap, Users, TrendingUp, Calendar, Clock, Mic, FileText, MessageCircle, Flag, Mail, Circle } from 'lucide-react';
+import { Zap, Users, TrendingUp, Calendar, Clock, Mic, FileText, MessageCircle, Flag, Mail, Circle, Trash2 } from 'lucide-react';
 
 const dark = {
   root: { padding: '16px 16px 100px', backgroundColor: '#111111', minHeight: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -35,7 +36,16 @@ const dark = {
   contextCard: { backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: 16, marginBottom: 20 },
 };
 
-export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes = [], toggleTask, openNote, goToLocker }) {
+export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes = [], toggleTask, deleteTask, openNote, goToLocker }) {
+  const { currentUser } = useAuth();
+  
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good Morning,';
+    if (hour < 17) return 'Good Afternoon,';
+    return 'Good Evening,';
+  }, []);
+
   const criticalTasks = useMemo(() => {
     const c = pendingTasks.filter(t => t.priority === 'Critical');
     return c.length > 0 ? c.slice(0, 3) : pendingTasks.slice(0, 3);
@@ -46,15 +56,23 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
   const today = useMemo(() => new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), []);
 
   const chartBars = useMemo(() => {
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push({ name: d.toLocaleDateString('en-US', { weekday: 'short' }), date: d.toDateString() });
+    }
     const buckets = [0, 0, 0, 0, 0, 0, 0];
     [...notes, ...deletedNotes].forEach(n => {
       let d = new Date(n.date); if (isNaN(d.getTime())) d = new Date();
-      let di = d.getDay(); di = di === 0 ? 6 : di - 1;
-      buckets[di] += parseInt(String(n.duration).replace(/\D/g, '')) || 1;
+      const ds = d.toDateString();
+      const index = days.findIndex(day => day.date === ds);
+      if (index !== -1) {
+        buckets[index] += parseInt(String(n.duration).replace(/\\D/g, '')) || 1;
+      }
     });
     const maxVal = Math.max(...buckets, 1);
-    return buckets.map((count, i) => ({ height: count === 0 ? 10 : Math.max(20, Math.round((count / maxVal) * 95)), day: days[i] }));
+    return buckets.map((count, i) => ({ height: count === 0 ? 10 : Math.max(20, Math.round((count / maxVal) * 95)), day: days[i].name }));
   }, [notes, deletedNotes]);
 
   const actionablePercent = useMemo(() => {
@@ -67,10 +85,22 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
     const ctxs = [];
     notes.forEach(note => {
       note.tasks?.forEach(task => {
-        if (task.date && !task.done) {
-          const cd = new Date(`${note.date} ${note.time}`);
-          const parsed = chrono.parse(task.date, cd);
-          ctxs.push({ id: task.id, noteId: note.id, title: task.text, time: note.time, dateLabel: task.date, created: cd.getTime() || Date.now(), targetDateObj: parsed[0]?.start.date() || null });
+        let dateLabel = task.date;
+        let parsed = null;
+        const cd = new Date(`${note.date} ${note.time}`);
+        
+        if (dateLabel) {
+            parsed = chrono.parse(dateLabel, cd);
+        } else {
+            const tempParsed = chrono.parse(task.text, cd);
+            if (tempParsed && tempParsed.length > 0) {
+                dateLabel = tempParsed[0].text;
+                parsed = tempParsed;
+            }
+        }
+
+        if (dateLabel && parsed && parsed.length > 0) {
+          ctxs.push({ id: task.id, noteId: note.id, title: task.text, time: note.time, dateLabel: dateLabel, created: cd.getTime() || Date.now(), targetDateObj: parsed[0]?.start.date() || null, isDone: task.done });
         }
       });
     });
@@ -89,7 +119,10 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingTop: 24 }}>
         <div>
           <p style={dark.headerDate}>{today}</p>
-          <h1 style={dark.headerTitle}>Assistrio</h1>
+          <h1 style={{ ...dark.headerTitle, fontSize: 26, letterSpacing: '-0.5px' }}>
+            <span style={{ fontWeight: 400, color: '#9ca3af' }}>{greeting}</span><br />
+            {currentUser?.displayName || currentUser?.username || 'Boss'}
+          </h1>
         </div>
         <div style={dark.statusBadge}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#34d399' }} />
@@ -157,7 +190,7 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
             <p style={{ fontSize: 11, color: '#4b5563', margin: 0 }}>No critical tasks pending</p>
           </div>
         ) : criticalTasks.map((task, idx) => (
-          <div key={task.id} style={dark.taskCard(idx)} onClick={() => openNote(task.noteId)}>
+          <div key={task.id} style={dark.taskCard(idx)} onClick={() => openNote(task.noteId, 'mom')}>
             <p style={dark.taskPrioLabel(idx)}>{idx === 0 ? 'HIGH PRIORITY' : idx === 1 ? 'ACTION REQUIRED' : 'FOLLOW UP'}</p>
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <button onClick={(e) => { e.stopPropagation(); toggleTask(task.noteId, task.id); }} style={{ color: '#374151', background: 'none', border: 'none', cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
@@ -172,6 +205,11 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
                   <span style={dark.chip('rgba(109,91,250,0.08)', '#8b5cf6', 'rgba(109,91,250,0.15)')}><FileText size={9} style={{ display: 'inline' }} /> VIEW SOURCE</span>
                 </div>
               </div>
+              {deleteTask && (
+                <button onClick={(e) => { e.stopPropagation(); deleteTask(task.noteId, task.id); }} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', marginTop: 2, flexShrink: 0, opacity: 0.6 }}>
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -185,14 +223,14 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
             {upcomingContexts.map((ctx, idx) => (
               <React.Fragment key={ctx.id}>
                 {idx > 0 && <div style={{ height: 1, backgroundColor: '#222', margin: '12px 0' }} />}
-                <div style={{ display: 'flex', gap: 14, alignItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 0.6 : 1 }} onClick={() => openNote(ctx.noteId)}>
+                <div style={{ display: 'flex', gap: 14, alignItems: 'center', cursor: 'pointer', opacity: idx > 0 ? 0.6 : 1 }} onClick={() => openNote(ctx.noteId, 'mom')}>
                   <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: idx === 0 ? 'rgba(109,91,250,0.12)' : '#1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <span style={{ fontSize: 10, fontWeight: 700, color: idx === 0 ? '#a78bfa' : '#4b5563' }}>{ctx.time}</span>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: '#f3f4f6', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{ctx.title}</p>
-                      {ctx.targetDateObj && <LiveTimer targetDate={ctx.targetDateObj} />}
+                      <p style={{ fontSize: 13, fontWeight: 700, color: ctx.isDone ? '#9ca3af' : '#f3f4f6', textDecoration: ctx.isDone ? 'line-through' : 'none', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 8 }}>{ctx.title}</p>
+                      {ctx.targetDateObj && <LiveTimer targetDate={ctx.targetDateObj} isDone={ctx.isDone} />}
                     </div>
                     <p style={{ fontSize: 11, color: '#4b5563', margin: '3px 0 0', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <Clock size={11} /> Scheduled for: {ctx.dateLabel}

@@ -42,13 +42,15 @@ export const noteService = {
     update: async (id, updates) => api.put(`/notes/${id}`, updates),
     delete: async (id) => api.delete(`/notes/${id}`),
     permanentlyDelete: async (id) => api.delete(`/notes/${id}/permanent`),
-    restore: async (id) => api.post(`/notes/${id}/restore`)
+    restore: async (id) => api.post(`/notes/${id}/restore`),
+    getShared: async (shareId, accessCode) => api.post('/notes/shared', { shareId, accessCode })
 };
 
 export const activityService = {
     getAll: async () => api.get('/activities'),
     create: async (activity) => api.post('/activities', activity),
-    createBulk: async (activities) => api.post('/activities/bulk', activities)
+    createBulk: async (activities) => api.post('/activities/bulk', activities),
+    clearAll: async () => api.delete('/activities')
 };
 
 export const userService = {
@@ -83,7 +85,8 @@ export const paymentService = {
 };
 
 export const aiService = {
-    getLivekitToken: async ({ roomName } = {}) => api.post('/ai/livekit/token', { roomName })
+    getLivekitToken: async ({ roomName } = {}) => api.post('/ai/livekit/token', { roomName }),
+    getChatContext: async () => api.get('/ai/chat-context')
 };
 
 export default api;

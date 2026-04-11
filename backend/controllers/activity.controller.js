@@ -36,3 +36,12 @@ exports.createManyActivities = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+exports.clearAllActivities = async (req, res) => {
+  try {
+    await Activity.deleteMany({ userId: req.user.id });
+    res.json({ success: true, message: 'Activity feed cleared.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

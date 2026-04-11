@@ -8,5 +8,6 @@ router.use(authMiddleware);
 router.get('/', activityController.getActivities);
 router.post('/', activityController.createActivity);
 router.post('/bulk', activityController.createManyActivities);
+router.delete('/', activityController.clearAllActivities);
 
 module.exports = router;

@@ -3,12 +3,12 @@ import { ChevronLeft, ChevronDown, Calendar, Clock, Activity, CheckCircle2, Circ
 import { speak, stopSpeaking } from '../../services/speechService';
 
 const dk = {
-  root: { position: 'absolute', inset: 0, backgroundColor: '#111111', zIndex: 50, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' },
-  header: { backgroundColor: '#161616', padding: '40px 20px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 },
+  root: (isShareOpen) => ({ position: 'absolute', inset: 0, backgroundColor: '#111111', zIndex: isShareOpen ? 60 : 49, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }),
+  header: { backgroundColor: '#161616', paddingTop: 'max(40px, env(safe-area-inset-top, 40px))', paddingBottom: 14, paddingLeft: 20, paddingRight: 20, borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 },
   backBtn: { display: 'flex', alignItems: 'center', gap: 4, color: '#6b7280', fontWeight: 700, fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' },
   headerActions: { display: 'flex', alignItems: 'center', gap: 8 },
   iconBtn: (bg, color) => ({ padding: 8, borderRadius: '50%', backgroundColor: bg, color, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }),
-  body: { flex: 1, overflowY: 'auto', padding: '20px 20px 80px' },
+  body: { flex: 1, overflowY: 'auto', padding: '20px 20px max(80px, env(safe-area-inset-bottom, 80px))' },
   chipRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, overflowX: 'auto', paddingBottom: 4 },
   chip: (bg, color, border) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 99, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', backgroundColor: bg, color, border: `1px solid ${border}`, flexShrink: 0, whiteSpace: 'nowrap' }),
   title: { fontSize: 22, fontWeight: 800, color: '#f9fafb', lineHeight: 1.3, letterSpacing: '-0.2px', marginBottom: 20, display: 'flex', alignItems: 'flex-start', gap: 8 },
@@ -44,7 +44,7 @@ const dk = {
   penBtn: { padding: 6, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 };
 
-export default function NoteDetail({ note, onClose, toggleTask, deleteNote, updateNote, updateTask, deleteTask, addTask }) {
+export default function NoteDetail({ note, initialTab = 'summary', onClose, toggleTask, deleteNote, updateNote, updateTask, deleteTask, addTask }) {
   if (!note) return null;
 
   const [editingField, setEditingField] = useState(null);
@@ -58,6 +58,7 @@ export default function NoteDetail({ note, onClose, toggleTask, deleteNote, upda
   const [showShareSheet, setShowShareSheet] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activeTab, setActiveTab] = useState(initialTab || 'summary');
   const editInputRef = useRef(null);
   const editTaskRef = useRef(null);
   const newTaskRef = useRef(null);
@@ -83,15 +84,15 @@ export default function NoteDetail({ note, onClose, toggleTask, deleteNote, upda
   };
 
   const formatShareText = () => {
-    let text = `📝 *${note.title}*\n📅 ${note.date} • ⏱ ${note.duration} • 🕐 ${note.time}\n\n`;
-    if (note.summaryDetailed || note.summaryShort || note.summary) text += `*✨ AI Summary*\n${note.summaryDetailed || note.summaryShort || note.summary}\n\n`;
-    if (note.mom) text += `*📋 Minutes of Meeting*\n${note.mom}\n\n`;
-    if (note.tasks?.length > 0) { text += `*✅ Tasks (${completedCount}/${totalCount})*\n`; note.tasks.forEach(t => { text += `${t.done ? '☑️' : '⬜'} ${t.text}${t.date ? ` (${t.date})` : ''}\n`; }); text += '\n'; }
+    let text = `${note.title}\nDate: ${note.date} | Duration: ${note.duration} | Time: ${note.time}\n\n`;
+    if (note.summaryDetailed || note.summaryShort || note.summary) text += `Executive Summary\n${note.summaryDetailed || note.summaryShort || note.summary}\n\n`;
+    if (note.mom) text += `Minutes of Meeting\n${note.mom}\n\n`;
+    if (note.tasks?.length > 0) { text += `Tasks (${completedCount}/${totalCount})\n`; note.tasks.forEach(t => { text += `- ${t.done ? "[x]" : "[ ]"} ${t.text}${t.date ? " (Due: " + t.date + ")" : ""}\n`; }); text += "\n"; }
     const noteIdStr = String(note.id); let hash = 0;
     for (let i = 0; i < noteIdStr.length; i++) { hash = ((hash << 5) - hash) + noteIdStr.charCodeAt(i); hash |= 0; }
     const accessCode = Math.abs(hash).toString().substring(0, 6).padStart(6, '0');
     const shareId = noteIdStr.split('-')[0] || noteIdStr.substring(0, 8);
-    text += `🎧 *Secure Recording Access*\nLink: https://app.assistrio.com/recording/${shareId}\nAccess Code: ${accessCode}\n\n— Shared via Assistrio`;
+    text += `Secure Recording Access\nLink: https://app.assistrio.com/recording/${shareId}\nAccess Code: ${accessCode}\n\n— Shared via Assistrio`;
     return text;
   };
 
@@ -110,13 +111,11 @@ export default function NoteDetail({ note, onClose, toggleTask, deleteNote, upda
   const inputStyle = { width: '100%', backgroundColor: '#222', border: '1px solid #2a2a2a', borderRadius: 12, padding: '10px 14px', fontSize: 14, color: '#f3f4f6', fontWeight: 600, outline: 'none', boxSizing: 'border-box', resize: 'none' };
 
   return (
-    <div style={dk.root}>
-      {/* Header */}
+    <div style={dk.root(showShareSheet)}>
       <div style={dk.header}>
         <button style={dk.backBtn} onClick={onClose}><ChevronLeft size={19} /> Back</button>
         <div style={dk.headerActions}>
           <button style={dk.iconBtn('rgba(109,91,250,0.1)', '#a78bfa')} onClick={() => setShowShareSheet(true)} aria-label="Share"><Share2 size={15} /></button>
-          {deleteNote && <button style={dk.iconBtn('rgba(239,68,68,0.1)', '#f87171')} onClick={() => setShowDeleteConfirm(true)} aria-label="Delete"><Trash2 size={15} /></button>}
         </div>
       </div>
 
@@ -180,104 +179,121 @@ export default function NoteDetail({ note, onClose, toggleTask, deleteNote, upda
           )}
         </div>
 
-        {/* Summary */}
-        <div style={{ ...dk.card, position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: 0, right: 0, opacity: 0.04, pointerEvents: 'none' }}><Target size={80} style={{ color: '#fff' }} /></div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <p style={dk.cardLabel('#8b5cf6')}><Activity size={15} />Executive Summary</p>
-            <button style={dk.penBtn} onClick={() => startEdit('summary')}><Pencil size={12} style={{ color: '#374151' }} /></button>
-          </div>
-          {note.summaryShort && <p style={dk.summaryQuote}>{note.summaryShort}</p>}
-          <p style={dk.summaryBody}>{note.summaryDetailed || note.summary}</p>
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #1f1f1f', marginBottom: 20 }}>
+          <button onClick={() => setActiveTab('summary')} style={{ flex: 1, padding: '12px', background: 'none', border: 'none', borderBottom: activeTab === 'summary' ? '2px solid #6d5bfa' : '2px solid transparent', color: activeTab === 'summary' ? '#f9fafb' : '#6b7280', fontWeight: 800, fontSize: 13, cursor: 'pointer', transition: 'all 0.2s' }}>Summary & Audio</button>
+          <button onClick={() => setActiveTab('mom')} style={{ flex: 1, padding: '12px', background: 'none', border: 'none', borderBottom: activeTab === 'mom' ? '2px solid #6d5bfa' : '2px solid transparent', color: activeTab === 'mom' ? '#f9fafb' : '#6b7280', fontWeight: 800, fontSize: 13, cursor: 'pointer', transition: 'all 0.2s' }}>Structured MoM & Tasks</button>
         </div>
 
-        {/* Detailed MOM */}
-        {note.detailedMom && (
-          <div style={dk.card}>
-            <p style={dk.cardLabel()}><Compass size={15} />Structured Minutes</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              {note.detailedMom.participants?.length > 0 && (
-                <div>
-                  <p style={{ ...dk.sectionTitle(), marginBottom: 10 }}><Users size={11} />Participants</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{note.detailedMom.participants.map(p => <span key={p} style={dk.participantBadge}>{p}</span>)}</div>
-                </div>
-              )}
-              {note.detailedMom.agenda?.length > 0 && (
-                <div>
-                  <p style={{ ...dk.sectionTitle(), marginBottom: 10 }}><Target size={11} />Agenda</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{note.detailedMom.agenda.map((item, i) => <div key={i} style={dk.bulletItem}><div style={dk.bulletDot} />{item}</div>)}</div>
-                </div>
-              )}
-              {note.detailedMom.discussion?.length > 0 && (
-                <div>
-                  <p style={{ ...dk.sectionTitle(), marginBottom: 10 }}><MessageCircle size={11} />Key Discussion Points</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{note.detailedMom.discussion.map((item, i) => <div key={i} style={dk.discussionItem}>{item}</div>)}</div>
-                </div>
-              )}
-              {note.detailedMom.decisions?.length > 0 && (
-                <div>
-                  <p style={{ ...dk.sectionTitle('#34d399'), marginBottom: 10 }}><CheckCircle2 size={11} />Decisions Made</p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{note.detailedMom.decisions.map((item, i) => <div key={i} style={dk.decisionItem}><Check size={15} style={{ flexShrink: 0, marginTop: 2 }} />{item}</div>)}</div>
-                </div>
-              )}
+        {activeTab === 'summary' && (
+          <div>
+            {/* Summary */}
+            <div style={{ ...dk.card, position: 'relative', overflow: 'hidden' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, opacity: 0.04, pointerEvents: 'none' }}><Target size={80} style={{ color: '#fff' }} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <p style={dk.cardLabel('#8b5cf6')}><Activity size={15} />Executive Summary</p>
+                <button style={dk.penBtn} onClick={() => startEdit('summary')}><Pencil size={12} style={{ color: '#374151' }} /></button>
+              </div>
+              {note.summaryShort && <p style={dk.summaryQuote}>{note.summaryShort}</p>}
+              <p style={dk.summaryBody}>{note.summaryDetailed || note.summary}</p>
             </div>
+
+            {/* Transcript */}
+            <div style={{ ...dk.card, padding: 0, overflow: 'hidden' }}>
+              <div style={{...dk.transcriptToggle, cursor: 'default'}}>
+                <p style={dk.cardLabel()}><FileText size={15} />Extended Transcript {note.diarization?.length > 0 && <span style={{ fontSize: 8, fontWeight: 800, backgroundColor: 'rgba(52,211,153,0.1)', color: '#34d399', padding: '2px 7px', borderRadius: 6, marginLeft: 6 }}>DIARIZED</span>}</p>
+              </div>
+              <div style={dk.transcriptBody}>
+                <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                  <button onClick={togglePlayback} style={dk.playBtn(isPlaying)}>{isPlaying ? 'Stop Playback' : 'Listen to Recording'}</button>
+                </div>
+                <div style={dk.transcriptBox}>
+                  {note.diarization?.length > 0 ? note.diarization.map((line, i) => (
+                    <div key={i} style={line.includes('Speaker 2') ? dk.diaryLine2 : dk.diaryLine1}>{line}</div>
+                  )) : <p style={{ whiteSpace: 'pre-line', lineHeight: 1.7, margin: 0 }}>{note.transcript}</p>}
+                </div>
+              </div>
+            </div>
+
+            {deleteNote && (
+              <button onClick={() => setShowDeleteConfirm(true)} style={{ width: '100%', padding: '16px', borderRadius: 16, backgroundColor: '#1a1a1a', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', marginTop: 32 }}>
+                <Trash2 size={16} /> Delete This Note
+              </button>
+            )}
           </div>
         )}
 
-        {/* Tasks */}
-        <div style={dk.card}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-            <p style={dk.cardLabel()}><CheckCircle2 size={15} />Action Items ({completedCount}/{totalCount})</p>
-            <span style={{ fontSize: 10, fontWeight: 800, color: '#8b5cf6' }}>{progress}% COMPLETE</span>
-          </div>
-          <div style={dk.progressTrack}><div style={dk.progressBar(progress)} /></div>
+        {activeTab === 'mom' && (
           <div>
-            {note.tasks.map(task => (
-              <div key={task.id} style={dk.taskItem(task.done)}>
-                <button onClick={() => toggleTask(note.id, task.id)} style={{ color: task.done ? '#34d399' : '#374151', background: 'none', border: 'none', cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
-                  {task.done ? <CheckCircle2 size={20} /> : <Circle size={20} />}
-                </button>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={dk.taskText(task.done)}>{task.text}</p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                    {task.date && <span style={dk.taskChip('rgba(109,91,250,0.1)', '#a78bfa', 'rgba(109,91,250,0.2)')}>{task.date}</span>}
-                    {task.priority && task.priority !== 'Normal' && <span style={dk.taskChip(task.priority === 'Critical' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', task.priority === 'Critical' ? '#f87171' : '#fbbf24', task.priority === 'Critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)')}>{task.priority}</span>}
-                    {task.assignee && <span style={dk.taskChip('rgba(167,139,250,0.1)', '#a78bfa', 'rgba(167,139,250,0.2)')}>@{task.assignee.split('@')[0]}</span>}
-                  </div>
+            {/* Detailed MOM */}
+            {note.detailedMom && (
+              <div style={dk.card}>
+                <p style={dk.cardLabel()}><Compass size={15} />Structured Minutes</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  {note.detailedMom.participants?.length > 0 && (
+                    <div>
+                      <p style={{ ...dk.sectionTitle(), marginBottom: 10 }}><Users size={11} />Participants</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{note.detailedMom.participants.map(p => <span key={p} style={dk.participantBadge}>{p}</span>)}</div>
+                    </div>
+                  )}
+                  {note.detailedMom.agenda?.length > 0 && (
+                    <div>
+                      <p style={{ ...dk.sectionTitle(), marginBottom: 10 }}><Target size={11} />Agenda</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{note.detailedMom.agenda.map((item, i) => <div key={i} style={dk.bulletItem}><div style={dk.bulletDot} />{item}</div>)}</div>
+                    </div>
+                  )}
+                  {note.detailedMom.discussion?.length > 0 && (
+                    <div>
+                      <p style={{ ...dk.sectionTitle(), marginBottom: 10 }}><MessageCircle size={11} />Key Discussion Points</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{note.detailedMom.discussion.map((item, i) => <div key={i} style={dk.discussionItem}>{item}</div>)}</div>
+                    </div>
+                  )}
+                  {note.detailedMom.decisions?.length > 0 && (
+                    <div>
+                      <p style={{ ...dk.sectionTitle('#34d399'), marginBottom: 10 }}><CheckCircle2 size={11} />Decisions Made</p>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{note.detailedMom.decisions.map((item, i) => <div key={i} style={dk.decisionItem}><Check size={15} style={{ flexShrink: 0, marginTop: 2 }} />{item}</div>)}</div>
+                    </div>
+                  )}
                 </div>
               </div>
-            ))}
-            {showAddTask ? (
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <input ref={newTaskRef} value={newTaskText} onChange={e => setNewTaskText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAddTask(); if (e.key === 'Escape') setShowAddTask(false); }} placeholder="New task..." style={{ ...inputStyle, flex: 1 }} />
-                <button onClick={handleAddTask} style={{ padding: '10px 14px', borderRadius: 12, backgroundColor: '#6d5bfa', border: 'none', color: '#fff', fontWeight: 700, cursor: 'pointer' }}><Check size={15} /></button>
-                <button onClick={() => setShowAddTask(false)} style={{ padding: '10px 14px', borderRadius: 12, backgroundColor: '#222', border: '1px solid #2a2a2a', color: '#6b7280', cursor: 'pointer' }}><X size={15} /></button>
-              </div>
-            ) : (
-              <button onClick={() => setShowAddTask(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 12, fontWeight: 700, color: '#6d5bfa', background: 'none', border: 'none', cursor: 'pointer' }}><Plus size={15} />Add Task</button>
             )}
-          </div>
-        </div>
 
-        {/* Transcript */}
-        <div style={{ ...dk.card, padding: 0, overflow: 'hidden' }}>
-          <button style={dk.transcriptToggle} onClick={() => setShowTranscript(!showTranscript)}>
-            <p style={dk.cardLabel()}><FileText size={15} />Extended Transcript {note.diarization?.length > 0 && <span style={{ fontSize: 8, fontWeight: 800, backgroundColor: 'rgba(52,211,153,0.1)', color: '#34d399', padding: '2px 7px', borderRadius: 6, marginLeft: 6 }}>DIARIZED</span>}</p>
-            <ChevronDown size={16} style={{ color: '#374151', transform: showTranscript ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
-          </button>
-          {showTranscript && (
-            <div style={dk.transcriptBody}>
-              <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-                <button onClick={togglePlayback} style={dk.playBtn(isPlaying)}>{isPlaying ? 'Stop Playback' : 'Listen to Recording'}</button>
+            {/* Tasks */}
+            <div style={dk.card}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <p style={dk.cardLabel()}><CheckCircle2 size={15} />Action Items ({completedCount}/{totalCount})</p>
+                <span style={{ fontSize: 10, fontWeight: 800, color: '#8b5cf6' }}>{progress}% COMPLETE</span>
               </div>
-              <div style={dk.transcriptBox}>
-                {note.diarization?.length > 0 ? note.diarization.map((line, i) => (
-                  <div key={i} style={line.includes('Speaker 2') ? dk.diaryLine2 : dk.diaryLine1}>{line}</div>
-                )) : <p style={{ whiteSpace: 'pre-line', lineHeight: 1.7, margin: 0 }}>{note.transcript}</p>}
+              <div style={dk.progressTrack}><div style={dk.progressBar(progress)} /></div>
+              <div>
+                {note.tasks.map(task => (
+                  <div key={task.id} style={dk.taskItem(task.done)}>
+                    <button onClick={() => toggleTask(note.id, task.id)} style={{ color: task.done ? '#34d399' : '#374151', background: 'none', border: 'none', cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
+                      {task.done ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                    </button>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={dk.taskText(task.done)}>{task.text}</p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {task.date && <span style={dk.taskChip('rgba(109,91,250,0.1)', '#a78bfa', 'rgba(109,91,250,0.2)')}>{task.date}</span>}
+                        {task.priority && task.priority !== 'Normal' && <span style={dk.taskChip(task.priority === 'Critical' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', task.priority === 'Critical' ? '#f87171' : '#fbbf24', task.priority === 'Critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)')}>{task.priority}</span>}
+                        {task.assignee && <span style={dk.taskChip('rgba(167,139,250,0.1)', '#a78bfa', 'rgba(167,139,250,0.2)')}>@{task.assignee.split('@')[0]}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {showAddTask ? (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <input ref={newTaskRef} value={newTaskText} onChange={e => setNewTaskText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAddTask(); if (e.key === 'Escape') setShowAddTask(false); }} placeholder="New task..." style={{ ...inputStyle, flex: 1 }} />
+                    <button onClick={handleAddTask} style={{ padding: '10px 14px', borderRadius: 12, backgroundColor: '#6d5bfa', border: 'none', color: '#fff', fontWeight: 700, cursor: 'pointer' }}><Check size={15} /></button>
+                    <button onClick={() => setShowAddTask(false)} style={{ padding: '10px 14px', borderRadius: 12, backgroundColor: '#222', border: '1px solid #2a2a2a', color: '#6b7280', cursor: 'pointer' }}><X size={15} /></button>
+                  </div>
+                ) : (
+                  <button onClick={() => setShowAddTask(true)} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 12, fontWeight: 700, color: '#6d5bfa', background: 'none', border: 'none', cursor: 'pointer' }}><Plus size={15} />Add Task</button>
+                )}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

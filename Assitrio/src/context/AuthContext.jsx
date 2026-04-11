@@ -228,6 +228,12 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(() => {
     saveSession(null);
+    try {
+      localStorage.removeItem('assistrio-notes-v2');
+      localStorage.removeItem('assistrio-deleted-notes-v2');
+      localStorage.removeItem('assistrio-activities-v2');
+      localStorage.removeItem('assistrio-onboarding-v2');
+    } catch(e) {}
   }, []);
 
   const updateProfile = useCallback(async (updates) => {
