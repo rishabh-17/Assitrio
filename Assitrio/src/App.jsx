@@ -271,8 +271,18 @@ function AuthenticatedApp({ currentUser, logout }) {
     }
   }, [setDeletedNotes, setActivities]);
 
-  const addTask = useCallback(async (noteId, taskText) => {
-    const newTask = { id: Date.now(), text: taskText, done: false, createdByUserId: currentUser?.id || null };
+  const addTask = useCallback(async (noteId, taskInput) => {
+    const text = typeof taskInput === 'string' ? taskInput : (taskInput?.text || '');
+    const newTask = {
+      id: Date.now(),
+      text,
+      done: false,
+      date: typeof taskInput === 'object' ? (taskInput?.date || null) : null,
+      priority: typeof taskInput === 'object' ? (taskInput?.priority || 'Normal') : 'Normal',
+      assignee: typeof taskInput === 'object' ? (taskInput?.assignee || '') : '',
+      assigneeUserId: typeof taskInput === 'object' ? (taskInput?.assigneeUserId || null) : null,
+      createdByUserId: currentUser?.id || null
+    };
     const scope = teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal';
     const setList = scope === 'team' ? setTeamNotes : setNotes;
     setList(prev => prev.map(n => {
@@ -346,12 +356,16 @@ function AuthenticatedApp({ currentUser, logout }) {
   }, [setNotes, setTeamNotes, setActivities, teamEnabled, teamNotes]);
 
   const scheduleFromNote = useCallback(async (noteId) => {
-    const note = notes.find(n => n.id === noteId);
+    const resolvedId = typeof noteId === 'object' && noteId?.id ? noteId.id : noteId;
+    const rawTranscript = typeof noteId === 'object' && noteId?.transcript ? noteId.transcript : undefined;
+    const note = typeof noteId === 'object'
+      ? noteId
+      : (notes.find(n => n.id === resolvedId) || teamNotes.find(n => n.id === resolvedId));
     if (!note) return;
 
     try {
-      const result = await attemptAutoSchedule(note);
-      if (result?.success) {
+      const result = await attemptAutoSchedule(note, rawTranscript, teamMembers);
+      if (result?.scheduled) {
         const toastEvents = result.events.map((ev) => {
           const { displayDate, displayTime } = formatMeetingForDisplay(ev);
           const providers = result.results.filter(r => r.success).map(r => r.provider);
@@ -457,12 +471,16 @@ function AuthenticatedApp({ currentUser, logout }) {
                   activityService.createBulk(items).catch(console.error);
                 }}
                 scheduleFromNote={scheduleFromNote}
+                teamMembers={teamMembers}
+                currentUserId={String(currentUser?.id || '')}
               />
             )}
             {overlay?.type === 'talk' && (
               <TalkSimulator
                 onClose={() => setOverlay(null)}
                 notes={notes}
+                teamMembers={teamMembers}
+                currentUserId={String(currentUser?.id || '')}
                 onSaveMOM={(note, activity) => {
                   addNoteAndActivity(note, activity);
                   setOverlay({ type: 'note', id: note.id });

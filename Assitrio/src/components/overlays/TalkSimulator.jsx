@@ -32,7 +32,8 @@ const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze
       "text": "Specific task description",
       "date": "Due date if mentioned, else null",
       "priority": "Critical | Important | Normal",
-      "assignee": "Name or email if identified, else null"
+      "assignee": "Name or email if identified, else null",
+      "assigneeUserId": "<TEAM_MEMBER_ID or null>"
     }
   ],
   "keywords": ["tag1", "tag2"],
@@ -50,18 +51,39 @@ IMPORTANT RULES:
 - If no tasks found, set 'tasks' to [].
 - Sentiment should reflect the overall tone.
 - Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
+- If the transcript assigns a task to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
+
+TEAM_MEMBERS:
+TEAM_MEMBERS_BLOCK
 
 Transcript:
 `;
+
+function buildTeamDirectory(teamMembers = []) {
+  const list = Array.isArray(teamMembers) ? teamMembers : [];
+  if (list.length === 0) return '(none)';
+  return list.map((m) => {
+    const id = m?.userId || m?.id || '';
+    const name = m?.displayName || '';
+    const username = m?.username || '';
+    const email = m?.email || '';
+    return `- id: ${id} | name: ${name} | username: ${username} | email: ${email}`;
+  }).join('\n');
+}
 
 const TASK_EXTRACT_INSTRUCTIONS = `The user just asked to create a task. Based on the recent conversation context, extract the single task Speaker 1 (User) is referring to. Respond ONLY with JSON:
 {
   "text": "Clear description",
   "date": "Date if mentioned, else null",
-  "priority": "Critical | Important | Normal"
+  "priority": "Critical | Important | Normal",
+  "assigneeUserId": "<TEAM_MEMBER_ID or null>"
 }
 
 IMPORTANT: If the user provides no specifics or context (e.g. they only say "create a task"), set "text" to "Pending requirement manually requested".
+IMPORTANT: If the user says to assign the task to a team member by name, you MUST choose the best match from TEAM_MEMBERS and set assigneeUserId to that member's id. If no match, set it to null.
+
+TEAM_MEMBERS:
+TEAM_MEMBERS_BLOCK
 
 Context:
 `;
@@ -75,7 +97,7 @@ function formatTalkTranscript(msgs) {
   }).filter(Boolean).join('\n\n');
 }
 
-export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNote, appendActivities = () => { }, addTask, scheduleFromNote }) {
+export default function TalkSimulator({ onClose, notes = [], teamMembers = [], currentUserId = '', onSaveMOM, updateNote, appendActivities = () => { }, addTask, scheduleFromNote }) {
   const [inputMode, setInputMode] = useState('voice');
   const [voiceState, setVoiceState] = useState('idle');
   const [input, setInput] = useState('');
@@ -96,6 +118,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   const pendingUserMsgIdRef = useRef(null);
   const autoNoteHandledForMessageIndex = useRef(-1);
   const autoTaskHandledForMessageIndex = useRef(-1);
+  const autoMeetingHandledForMessageIndex = useRef(-1);
   const savedNoteIdRef = useRef(null);
   const aiAudioChunksRef = useRef([]);
   const sessionStartRef = useRef(Date.now());
@@ -228,18 +251,28 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     if (updateNote) {
       const forAi = transcript.length > MAX_TRANSCRIPT_FOR_AI ? transcript.slice(0, MAX_TRANSCRIPT_FOR_AI) : transcript;
       try {
-        const aiResult = await getAIResponse(MOM_JSON_INSTRUCTIONS + forAi, [], true);
+        const prompt = MOM_JSON_INSTRUCTIONS.replace('TEAM_MEMBERS_BLOCK', buildTeamDirectory(teamMembers)) + forAi;
+        const aiResult = await getAIResponse(prompt, [], true);
         const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const p = JSON.parse(jsonMatch[0]);
-          const formattedTasks = (p.tasks || []).map((t, i) => ({ id: newId + i + 1, text: t.text, done: false, date: t.date, priority: t.priority, assignee: t.assignee }));
+          const formattedTasks = (p.tasks || []).map((t, i) => ({
+            id: newId + i + 1,
+            text: t.text,
+            done: false,
+            date: t.date,
+            priority: t.priority,
+            assignee: t.assignee,
+            assigneeUserId: t.assigneeUserId || null,
+            createdByUserId: currentUserId || null
+          }));
           updateNote(newId, { title: p.mom?.title || draft.title, summaryShort: p.summary_short, summaryDetailed: p.summary_detailed, summary: p.summary_short || p.summary_detailed, detailedMom: p.mom, mom: p.mom?.discussion?.join('\n') || draft.mom, tasks: formattedTasks, keywords: p.keywords, sentiment: p.sentiment, diarization: p.diarization, callStatus: p.call_status || 'completed' });
-          if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote({ ...draft, transcript, mom: p.mom?.discussion?.join('\n') }, transcript);
+          if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote(newId);
         }
       } catch (e) { console.error('Extraction failed:', e); updateNote(newId, { summary: 'Analysis failed, but transcript is preserved.', callStatus: 'dropped' }); }
     }
     setIsSaving(false);
-  }, [onSaveMOM, updateNote, buildAudioUrl, scheduleFromNote]);
+  }, [onSaveMOM, updateNote, buildAudioUrl, scheduleFromNote, teamMembers, currentUserId]);
 
   const extractAndAddTask = useCallback(async (triggerText) => {
     const recent = messagesRef.current.slice(-6);
@@ -248,11 +281,27 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     const noteId = savedNoteIdRef.current;
     if (!noteId) return;
     try {
-      const aiResult = await getAIResponse(TASK_EXTRACT_INSTRUCTIONS + context, [], true);
+      const teamBlock = buildTeamDirectory(teamMembers);
+      const prompt = TASK_EXTRACT_INSTRUCTIONS.replace('TEAM_MEMBERS_BLOCK', teamBlock) + context;
+      const aiResult = await getAIResponse(prompt, [], true);
       const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
-      if (jsonMatch) { const p = JSON.parse(jsonMatch[0]); if (typeof addTask === 'function') addTask(noteId, p.text || triggerText, p.date, p.priority); }
+      if (jsonMatch) {
+        const p = JSON.parse(jsonMatch[0]);
+        const assigneeUserId = p.assigneeUserId ? String(p.assigneeUserId) : '';
+        const member = assigneeUserId ? (teamMembers || []).find((m) => String(m.userId || m.id) === assigneeUserId) : null;
+        const assignee = member ? (member.email || member.username || member.displayName || '') : '';
+        if (typeof addTask === 'function') {
+          addTask(noteId, {
+            text: p.text || triggerText,
+            date: p.date || null,
+            priority: p.priority || 'Normal',
+            assigneeUserId: assigneeUserId || null,
+            assignee
+          });
+        }
+      }
     } catch { }
-  }, [saveTalkNote, addTask, appendActivities]);
+  }, [saveTalkNote, addTask, appendActivities, teamMembers]);
 
   useEffect(() => {
     const last = messages[messages.length - 1];
@@ -261,7 +310,16 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
     if (idx <= autoNoteHandledForMessageIndex.current) return;
     if (userAskedToCreateNote(last.text)) { autoNoteHandledForMessageIndex.current = idx; saveTalkNote({ auto: true }); }
     else if (userAskedToCreateTask(last.text)) { autoTaskHandledForMessageIndex.current = idx; extractAndAddTask(last.text); }
-  }, [messages, saveTalkNote, extractAndAddTask]);
+    else if (userAskedToScheduleMeeting(last.text)) {
+      if (idx <= autoMeetingHandledForMessageIndex.current) return;
+      autoMeetingHandledForMessageIndex.current = idx;
+      (async () => {
+        if (!savedNoteIdRef.current) await saveTalkNote({ auto: true });
+        const noteId = savedNoteIdRef.current;
+        if (noteId && typeof scheduleFromNote === 'function') scheduleFromNote(noteId);
+      })();
+    }
+  }, [messages, saveTalkNote, extractAndAddTask, scheduleFromNote]);
 
   const handleClose = useCallback(async () => {
     const sessionSeconds = Math.round((Date.now() - sessionStartRef.current) / 1000);

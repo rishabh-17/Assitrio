@@ -18,6 +18,7 @@ const MEETING_EXTRACT_PROMPT = `You are a meeting scheduler AI. Analyze this con
       "startISO": "RFC3339 timestamp including timezone offset, e.g. 2026-04-12T17:30:00+05:30",
       "endISO": "RFC3339 timestamp including timezone offset, e.g. 2026-04-12T18:00:00+05:30",
       "attendees": ["email@example.com"],
+      "attendeeUserIds": ["<TEAM_MEMBER_ID>"],
       "description": "Brief description of what the meeting is about"
     }
   ]
@@ -29,12 +30,16 @@ RULES:
 - Resolve relative dates using the user's local timezone: "tomorrow" = TOMORROW_DATE_LOCAL, "next Monday" = NEXT_MONDAY_DATE_LOCAL, "this Friday" = THIS_FRIDAY_DATE_LOCAL, etc.
 - If the meeting is scheduled for "today" but the time has already passed, schedule it for the next valid future occurrence (usually tomorrow) unless the transcript explicitly indicates it already happened.
 - Always include both: (date/startTime/endTime/timeZone) AND (startISO/endISO) to avoid timezone mistakes.
-- attendees should only include email addresses if explicitly mentioned; otherwise use an empty array
+- If the transcript refers to a team member by name (e.g. "with Rahul" / "invite Rahul"), you MUST include that member in attendeeUserIds using the TEAM_MEMBERS directory. Also include their email in attendees if available.
+- attendees should only include email addresses if explicitly mentioned OR if it comes from TEAM_MEMBERS (then it's allowed).
 - If no meeting is found, return: {"hasMeeting": false, "meetings": []}
 
 User timezone is: USER_TIMEZONE
 Today's local date is: TODAY_DATE_LOCAL
 Current local time is: CURRENT_TIME_LOCAL
+
+TEAM_MEMBERS (use these ids/emails only when matching names mentioned in transcript):
+TEAM_MEMBERS_BLOCK
 
 Transcript:
 `;
@@ -42,7 +47,7 @@ Transcript:
 /**
  * Helper to resolve relative date tokens in the prompt.
  */
-function buildPromptWithDates(transcript) {
+function buildPromptWithDates(transcript, teamMembers = []) {
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -66,6 +71,16 @@ function buildPromptWithDates(transcript) {
 
   const timeFmt = () => now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
+  const teamBlock = Array.isArray(teamMembers) && teamMembers.length > 0
+    ? teamMembers.map((m) => {
+      const id = m?.userId || m?.id || '';
+      const name = m?.displayName || '';
+      const username = m?.username || '';
+      const email = m?.email || '';
+      return `- id: ${id} | name: ${name} | username: ${username} | email: ${email}`;
+    }).join('\n')
+    : '- (none)';
+
   return MEETING_EXTRACT_PROMPT
     .replaceAll('USER_TIMEZONE', tz)
     .replaceAll('TODAY_DATE_LOCAL', localIsoDate(now))
@@ -73,6 +88,7 @@ function buildPromptWithDates(transcript) {
     .replaceAll('NEXT_MONDAY_DATE_LOCAL', localIsoDate(nextMonday))
     .replaceAll('THIS_FRIDAY_DATE_LOCAL', localIsoDate(thisFriday))
     .replaceAll('CURRENT_TIME_LOCAL', timeFmt())
+    .replaceAll('TEAM_MEMBERS_BLOCK', teamBlock)
     + transcript;
 }
 
@@ -82,7 +98,7 @@ function buildPromptWithDates(transcript) {
  * @param {string} transcript - The conversation transcript
  * @returns {Promise<{ hasMeeting: boolean, meetings: object[] }>}
  */
-export async function extractMeetingDetails(transcript) {
+export async function extractMeetingDetails(transcript, teamMembers = []) {
   if (!transcript || transcript.trim().length < 20) {
     return { hasMeeting: false, meetings: [] };
   }
@@ -94,7 +110,7 @@ export async function extractMeetingDetails(transcript) {
     : transcript;
 
   try {
-    const aiResult = await getAIResponse(buildPromptWithDates(input), [], true);
+    const aiResult = await getAIResponse(buildPromptWithDates(input, teamMembers), [], true);
 
     if (aiResult && aiResult.length > 10) {
       const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
@@ -103,7 +119,7 @@ export async function extractMeetingDetails(transcript) {
 
         if (parsed.hasMeeting && Array.isArray(parsed.meetings) && parsed.meetings.length > 0) {
           // Validate and normalize each meeting
-          const meetings = parsed.meetings.map((m) => normalizeMeeting(m)).filter(Boolean);
+          const meetings = parsed.meetings.map((m) => normalizeMeeting(m, teamMembers)).filter(Boolean);
           return { hasMeeting: meetings.length > 0, meetings };
         }
 
@@ -122,13 +138,22 @@ export async function extractMeetingDetails(transcript) {
  * Normalize and validate a meeting object.
  * Ensures ISO date-time format for start/end.
  */
-function normalizeMeeting(m) {
+function normalizeMeeting(m, teamMembers = []) {
   if (!m || !m.title) return null;
 
   try {
     const title = m.title;
     const description = m.description || '';
     const attendees = Array.isArray(m.attendees) ? m.attendees.filter((e) => typeof e === 'string' && e.includes('@')) : [];
+    const attendeeUserIds = Array.isArray(m.attendeeUserIds) ? m.attendeeUserIds.map((x) => String(x)).filter(Boolean) : [];
+    const memberById = new Map(
+      (Array.isArray(teamMembers) ? teamMembers : []).map((mem) => [String(mem?.userId || mem?.id || ''), mem])
+    );
+    for (const id of attendeeUserIds) {
+      const mem = memberById.get(String(id));
+      const email = mem?.email;
+      if (email && typeof email === 'string' && email.includes('@') && !attendees.includes(email)) attendees.push(email);
+    }
 
     const preferISO = typeof m.startISO === 'string' && typeof m.endISO === 'string';
     if (preferISO) {

@@ -19,7 +19,7 @@ import { userAskedToScheduleMeeting } from '../utils/noteIntents';
  * @param {string} [rawTranscript] — optional override transcript (e.g. from Talk session)
  * @returns {Promise<{ scheduled: boolean, events: object[], results: object[] }>}
  */
-export async function attemptAutoSchedule(note, rawTranscript) {
+export async function attemptAutoSchedule(note, rawTranscript, teamMembers = []) {
   const result = { scheduled: false, events: [], results: [] };
 
   // 1. Check if any calendar is connected
@@ -41,7 +41,7 @@ export async function attemptAutoSchedule(note, rawTranscript) {
   // 4. Extract meeting details via AI
   let extracted;
   try {
-    extracted = await extractMeetingDetails(transcript);
+    extracted = await extractMeetingDetails(transcript, teamMembers);
   } catch (err) {
     console.warn('Auto-schedule: meeting extraction failed:', err);
     return result;

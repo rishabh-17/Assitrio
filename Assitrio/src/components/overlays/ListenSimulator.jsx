@@ -26,7 +26,8 @@ const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze
       "text": "Specific task description",
       "date": "Due date if mentioned, else null",
       "priority": "Critical | Important | Normal",
-      "assignee": "Name or email if identified, else null"
+      "assignee": "Name or email if identified, else null",
+      "assigneeUserId": "<TEAM_MEMBER_ID or null>"
     }
   ],
   "keywords": ["tag1", "tag2"],
@@ -45,11 +46,27 @@ IMPORTANT RULES:
 - Metadata accuracy is critical for enterprise reporting.
 - If the text explicitly asks to 'create a task' but no specifics are given, output a task with text 'Pending requirement manually requested'.
 - Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
+- If the transcript assigns a task to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
+
+TEAM_MEMBERS:
+TEAM_MEMBERS_BLOCK
 
 Transcript:
 `;
 
-export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appendActivities = () => { }, scheduleFromNote }) {
+function buildTeamDirectory(teamMembers = []) {
+  const list = Array.isArray(teamMembers) ? teamMembers : [];
+  if (list.length === 0) return '(none)';
+  return list.map((m) => {
+    const id = m?.userId || m?.id || '';
+    const name = m?.displayName || '';
+    const username = m?.username || '';
+    const email = m?.email || '';
+    return `- id: ${id} | name: ${name} | username: ${username} | email: ${email}`;
+  }).join('\n');
+}
+
+export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appendActivities = () => { }, scheduleFromNote, teamMembers = [], currentUserId = '' }) {
   const [transcript, setTranscript] = useState('Initializing Elite Recorder...');
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const recorderRef = useRef(null);
@@ -102,13 +119,23 @@ export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appe
       if (finalText.includes('error') || finalText === 'No speech detected.') { updateNote(newId, { title: 'Empty Recording', summary: 'No content to analyze.', callStatus: 'no-response' }); return; }
       const forAi = finalText.length > MAX_TRANSCRIPT_FOR_AI ? finalText.slice(0, MAX_TRANSCRIPT_FOR_AI) : finalText;
       try {
-        const aiResult = await getAIResponse(MOM_JSON_INSTRUCTIONS + forAi, [], true);
+        const prompt = MOM_JSON_INSTRUCTIONS.replace('TEAM_MEMBERS_BLOCK', buildTeamDirectory(teamMembers)) + forAi;
+        const aiResult = await getAIResponse(prompt, [], true);
         const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const p = JSON.parse(jsonMatch[0]);
-          const formattedTasks = (p.tasks || []).map((t, i) => ({ id: newId + i + 1, text: t.text, done: false, date: t.date, priority: t.priority, assignee: t.assignee }));
+          const formattedTasks = (p.tasks || []).map((t, i) => ({
+            id: newId + i + 1,
+            text: t.text,
+            done: false,
+            date: t.date,
+            priority: t.priority,
+            assignee: t.assignee,
+            assigneeUserId: t.assigneeUserId || null,
+            createdByUserId: currentUserId || null
+          }));
           updateNote(newId, { title: p.mom?.title || 'Recorded Meeting', summaryShort: p.summary_short, summaryDetailed: p.summary_detailed, summary: p.summary_short || p.summary_detailed, detailedMom: p.mom, mom: p.mom?.discussion?.join('\n') || 'No clear discussion points.', tasks: formattedTasks, keywords: p.keywords, sentiment: p.sentiment, diarization: p.diarization, callStatus: p.call_status || 'completed' });
-          if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote({ ...draft, transcript: finalText, mom: p.mom?.discussion?.join('\n') }, finalText);
+          if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote(newId);
         }
       } catch (e) { console.error('Listen extraction failed:', e); updateNote(newId, { summary: 'Analysis failed.', callStatus: 'dropped' }); }
     })();
