@@ -140,7 +140,7 @@ export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appe
       backgroundColor: '#0a0a0a',
       zIndex: 110, display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'space-between',
-      padding: 24, color: '#fff', overflow: 'hidden',
+      padding: 24, paddingTop: 'calc(24px + env(safe-area-inset-top))', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', color: '#fff', overflow: 'hidden',
       fontFamily: 'system-ui,-apple-system,sans-serif',
     }}>
       {/* Top gradient bar */}

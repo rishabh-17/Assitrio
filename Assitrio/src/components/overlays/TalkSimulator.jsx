@@ -276,7 +276,7 @@ export default function TalkSimulator({ onClose, notes = [], onSaveMOM, updateNo
   return (
     <div style={{ position: 'absolute', inset: 0, backgroundColor: '#111111', zIndex: 110, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
       {/* Header */}
-      <div style={{ backgroundColor: '#161616', padding: '40px 20px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ backgroundColor: '#161616', paddingTop: 'calc(40px + env(safe-area-inset-top))', paddingLeft: 20, paddingRight: 20, paddingBottom: 14, borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg,#6d5bfa,#9b5de5)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', boxShadow: '0 4px 14px rgba(109,91,250,0.35)' }}>
             <AudioLines size={20} />

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { ChevronRight, ChevronLeft, Link2, Bell, LogOut, HelpCircle, FileText, Camera, Pencil, Check, X, User, Mail, Phone, Zap, CreditCard, Trash2, RefreshCw, AlertCircle, Calendar, Cpu, Shield } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Link2, Bell, LogOut, HelpCircle, FileText, Camera, Pencil, Check, X, User, Mail, Phone, Zap, CreditCard, Trash2, RefreshCw, AlertCircle, Calendar, Cpu, Shield, Users } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { getUsageStats, syncGlobalConfig } from '../services/usageTracker';
 import * as calendarService from '../services/calendarService';
-import { userService } from '../services/apiService';
+import { userService, teamService } from '../services/apiService';
 
 const dk = {
   root: { padding: '20px 16px 100px', backgroundColor: '#111111', minHeight: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -22,7 +22,7 @@ const dk = {
   settingSubtitle: { fontSize: 11, color: '#4b5563' },
   logoutBtn: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', backgroundColor: '#1a1a1a', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, color: '#f87171', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginBottom: 20 },
   overlay: { position: 'fixed', inset: 0, backgroundColor: '#111111', zIndex: 120, display: 'flex', flexDirection: 'column' },
-  overlayHeader: { backgroundColor: '#161616', padding: '40px 20px 14px', borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 },
+  overlayHeader: { backgroundColor: '#161616', paddingTop: 'calc(40px + env(safe-area-inset-top))', paddingLeft: 20, paddingRight: 20, paddingBottom: 14, borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 },
   overlayBack: { display: 'flex', alignItems: 'center', gap: 4, color: '#6b7280', fontWeight: 700, fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' },
   overlaySave: { display: 'flex', alignItems: 'center', gap: 4, background: 'linear-gradient(135deg, #6d5bfa, #9b5de5)', color: '#fff', fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer' },
   overlayBody: { flex: 1, overflowY: 'auto', padding: '20px 20px 40px' },
@@ -58,10 +58,11 @@ function SettingItem({ icon: Icon, iconBg, iconColor, title, subtitle, trailing,
 }
 
 export default function Profile({ user, onLogout, deletedNotes = [], restoreNote, permanentlyDeleteNote, notesCount = 0 }) {
-  const { updateProfile } = useAuth();
+  const { updateProfile, patchSession } = useAuth();
   const [showIntegrations, setShowIntegrations] = useState(false);
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSubscription, setShowSubscription] = useState(false);
+  const [showTeam, setShowTeam] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -80,12 +81,99 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
   const [editPhoto, setEditPhoto] = useState(user?.profilePhoto || '');
   const fileInputRef = useRef(null);
 
+  const [team, setTeam] = useState(null);
+  const [teamInvitations, setTeamInvitations] = useState([]);
+  const [teamInviteCount, setTeamInviteCount] = useState(0);
+  const [inviteIdentifier, setInviteIdentifier] = useState('');
+  const [teamError, setTeamError] = useState('');
+  const [teamBusy, setTeamBusy] = useState(false);
+
   const openEditProfile = () => { setEditName(user?.displayName || ''); setEditEmail(user?.email || ''); setEditMobile(user?.mobile || ''); setEditPhoto(user?.profilePhoto || ''); setShowEditProfile(true); };
   const handlePhotoUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => setEditPhoto(ev.target.result); r.readAsDataURL(f); };
   const saveProfile = () => { updateProfile({ displayName: editName.trim() || user?.username, email: editEmail.trim(), mobile: editMobile.trim(), profilePhoto: editPhoto }); setShowEditProfile(false); };
 
   const initials = (user?.displayName || user?.username || 'U').charAt(0).toUpperCase();
   const isComplete = user?.email && user?.mobile && user?.displayName;
+
+  useEffect(() => {
+    let cancelled = false;
+    teamService.getInvitations().then((inv) => {
+      if (cancelled) return;
+      const count = Array.isArray(inv?.invitations) ? inv.invitations.length : 0;
+      setTeamInviteCount(count);
+    }).catch(() => {
+      if (!cancelled) setTeamInviteCount(0);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const refreshTeamData = async () => {
+    try {
+      const [t, inv] = await Promise.all([teamService.getMy(), teamService.getInvitations()]);
+      setTeam(t?.team || null);
+      setTeamInvitations(inv?.invitations || []);
+      setTeamInviteCount(Array.isArray(inv?.invitations) ? inv.invitations.length : 0);
+      setTeamError('');
+    } catch (e) {
+      setTeamError(typeof e?.message === 'string' ? e.message : 'Failed to load team');
+    }
+  };
+
+  const openTeam = async () => {
+    setShowTeam(true);
+    setTeamBusy(true);
+    setInviteIdentifier('');
+    setTeamError('');
+    try {
+      await refreshTeamData();
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const sendInvite = async () => {
+    if (!team?.id) return;
+    const ident = inviteIdentifier.trim();
+    if (!ident) return;
+    setTeamBusy(true);
+    setTeamError('');
+    try {
+      await teamService.invite(team.id, ident);
+      setInviteIdentifier('');
+    } catch (e) {
+      setTeamError(typeof e?.response?.data?.error === 'string' ? e.response.data.error : (typeof e?.message === 'string' ? e.message : 'Failed to invite'));
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const acceptInvite = async (inviteId) => {
+    setTeamBusy(true);
+    setTeamError('');
+    try {
+      const resp = await teamService.acceptInvite(inviteId);
+      const teamId = resp?.team?.id || resp?.team?._id || null;
+      if (teamId) patchSession({ memberTeamId: teamId });
+      await refreshTeamData();
+    } catch (e) {
+      setTeamError(typeof e?.response?.data?.error === 'string' ? e.response.data.error : (typeof e?.message === 'string' ? e.message : 'Failed to accept invite'));
+    } finally {
+      setTeamBusy(false);
+    }
+  };
+
+  const rejectInvite = async (inviteId) => {
+    setTeamBusy(true);
+    setTeamError('');
+    try {
+      await teamService.rejectInvite(inviteId);
+      await refreshTeamData();
+    } catch (e) {
+      setTeamError(typeof e?.response?.data?.error === 'string' ? e.response.data.error : (typeof e?.message === 'string' ? e.message : 'Failed to reject invite'));
+    } finally {
+      setTeamBusy(false);
+    }
+  };
 
   return (
     <div style={dk.root}>
@@ -148,6 +236,25 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
       <div style={{ marginBottom: 20 }}>
         <SettingItem icon={Zap} iconBg="rgba(251,191,36,0.1)" iconColor="#fbbf24" title="Subscription & Plan" subtitle={`${usage.planName} · ${usage.totalMinutes}/${usage.minutesLimit >= 9000 ? '∞' : usage.minutesLimit} min`} onClick={() => setShowSubscription(true)} />
       </div>
+
+      {/* Team */}
+      {(user?.accountType === 'team' || teamInviteCount > 0) && (
+        <>
+          <p style={dk.sectionLabel}>Team</p>
+          <div style={{ marginBottom: 20 }}>
+            <SettingItem
+              icon={Users}
+              iconBg="rgba(96,165,250,0.1)"
+              iconColor="#60a5fa"
+              title={user?.accountType === 'team' ? 'Team Account' : 'Team Invitations'}
+              subtitle={user?.accountType === 'team'
+                ? 'Manage your team members'
+                : `${teamInviteCount} pending invite(s)`}
+              onClick={openTeam}
+            />
+          </div>
+        </>
+      )}
 
       {/* Data & Privacy */}
       <p style={dk.sectionLabel}>Data & Storage</p>
@@ -241,6 +348,92 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Team Overlay */}
+      {showTeam && (
+        <div style={dk.overlay}>
+          <div style={dk.overlayHeader}>
+            <button style={dk.overlayBack} onClick={() => setShowTeam(false)}><ChevronLeft size={19} /> Back</button>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#f9fafb' }}>Team</span>
+            <button style={dk.overlaySave} onClick={refreshTeamData} disabled={teamBusy}><RefreshCw size={15} /> Refresh</button>
+          </div>
+          <div style={dk.overlayBody}>
+            {teamError && (
+              <div style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 14, padding: 12, color: '#fca5a5', fontSize: 12, fontWeight: 700, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertCircle size={16} /> {teamError}
+              </div>
+            )}
+
+            {teamBusy && (
+              <div style={{ fontSize: 12, color: '#6b7280', fontWeight: 600, marginBottom: 12 }}>Loading…</div>
+            )}
+
+            {teamInvitations.length > 0 && (
+              <div style={{ marginBottom: 22 }}>
+                <p style={dk.sectionLabel}>Invitations</p>
+                {teamInvitations.map((inv) => (
+                  <div key={inv.id} style={{ backgroundColor: '#1a1a1a', border: '1px solid #222', borderRadius: 16, padding: 14, marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 14, fontWeight: 800, color: '#f3f4f6', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inv.team?.name || 'Team'}</p>
+                        <p style={{ fontSize: 11, color: '#4b5563', margin: '6px 0 0' }}>
+                          Invited by {inv.inviter?.displayName || inv.inviter?.username || 'User'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        <button onClick={() => rejectInvite(inv.id)} disabled={teamBusy} style={{ fontSize: 11, fontWeight: 800, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(239,68,68,0.2)', backgroundColor: 'rgba(239,68,68,0.08)', color: '#f87171', cursor: 'pointer' }}>Reject</button>
+                        <button onClick={() => acceptInvite(inv.id)} disabled={teamBusy} style={{ fontSize: 11, fontWeight: 800, padding: '8px 10px', borderRadius: 10, border: '1px solid rgba(52,211,153,0.2)', backgroundColor: 'rgba(52,211,153,0.08)', color: '#34d399', cursor: 'pointer' }}>Accept</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {user?.accountType === 'team' && team && (
+              <>
+                <div style={{ backgroundColor: '#1a1a1a', borderRadius: 18, border: '1px solid #222', padding: 16, marginBottom: 20 }}>
+                  <p style={{ fontSize: 16, fontWeight: 900, color: '#f9fafb', margin: '0 0 6px' }}>{team.name}</p>
+                  <p style={{ fontSize: 11, color: '#4b5563', margin: 0 }}>{team.members?.length || 0} members</p>
+                </div>
+
+                <div style={{ backgroundColor: '#1a1a1a', borderRadius: 18, border: '1px solid #222', padding: 16, marginBottom: 20 }}>
+                  <p style={{ fontSize: 14, fontWeight: 800, color: '#f9fafb', margin: '0 0 10px' }}>Invite member</p>
+                  <label style={dk.inputLabel}><Mail size={11} />Username or Email</label>
+                  <input value={inviteIdentifier} onChange={(e) => setInviteIdentifier(e.target.value)} placeholder="e.g. User1 or user@email.com" style={dk.input} />
+                  <button onClick={sendInvite} disabled={teamBusy || !inviteIdentifier.trim()} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: inviteIdentifier.trim() ? 'pointer' : 'default', backgroundColor: inviteIdentifier.trim() ? '#6d5bfa' : '#222', color: inviteIdentifier.trim() ? '#fff' : '#4b5563', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                    Send Invite
+                  </button>
+                  <p style={{ fontSize: 11, color: '#4b5563', margin: '10px 0 0' }}>Invite works only for existing users.</p>
+                </div>
+
+                <div>
+                  <p style={dk.sectionLabel}>Members</p>
+                  {(team.members || []).map((m) => (
+                    <div key={String(m.userId)} style={{ backgroundColor: '#1a1a1a', borderRadius: 14, border: '1px solid #222', padding: '12px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: '#f3f4f6', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.displayName || m.username}</p>
+                        <p style={{ fontSize: 11, color: '#4b5563', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email || `@${m.username}`}</p>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: m.teamRole === 'owner' ? '#34d399' : '#a78bfa', backgroundColor: m.teamRole === 'owner' ? 'rgba(52,211,153,0.08)' : 'rgba(167,139,250,0.08)', border: `1px solid ${m.teamRole === 'owner' ? 'rgba(52,211,153,0.18)' : 'rgba(167,139,250,0.18)'}`, borderRadius: 99, padding: '4px 10px', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                        {m.teamRole}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {user?.accountType !== 'team' && teamInvitations.length === 0 && (
+              <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: '32px 20px', textAlign: 'center' }}>
+                <Users size={26} style={{ color: '#374151', margin: '0 auto 10px', display: 'block' }} />
+                <p style={{ fontSize: 14, fontWeight: 800, color: '#9ca3af', margin: '0 0 6px' }}>No invitations</p>
+                <p style={{ fontSize: 12, color: '#4b5563', margin: 0 }}>Ask a team owner to invite you by username or email.</p>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -10,7 +10,7 @@ export default function BottomNav({ currentTab, onTabChange, onActionClick, user
     zIndex: 50,
     display: 'flex',
     justifyContent: 'center',
-    paddingBottom: 28,
+    paddingBottom: 'calc(14px + env(safe-area-inset-bottom))',
     paddingLeft: 24,
     paddingRight: 24,
     pointerEvents: 'none',

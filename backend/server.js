@@ -13,6 +13,7 @@ const aiRoutes = require('./routes/ai.routes');
 const userRoutes = require('./routes/user.routes');
 const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const teamRoutes = require('./routes/team.routes');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5050;
@@ -36,6 +37,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/teams', teamRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

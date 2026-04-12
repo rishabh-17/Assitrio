@@ -23,7 +23,7 @@ import { useNotificationSync } from './utils/useNotificationSync';
 import { useAppPermissions } from './hooks/useAppPermissions';
 import { attemptAutoSchedule, formatMeetingForDisplay } from './services/autoScheduler';
 import { isGoogleConnected, isMicrosoftConnected } from './services/calendarService';
-import { noteService, activityService } from './services/apiService';
+import { noteService, activityService, teamService } from './services/apiService';
 
 import SharedRecordingAuth from './components/SharedRecordingAuth';
 
@@ -45,11 +45,11 @@ export default function App() {
 function AppContent() {
   const { isAuthenticated, currentUser, login, signup, googleLogin, logout } = useAuth();
 
-  const handleAuth = (mode, username, password, displayName) => {
+  const handleAuth = (mode, username, password, displayName, accountType, teamName, loginKind) => {
     if (mode === 'login') {
-      return login(username, password);
+      return login(username, password, loginKind);
     } else {
-      return signup(username, password, displayName);
+      return signup(username, password, displayName, accountType, teamName);
     }
   };
 
@@ -69,7 +69,7 @@ function AdminExperience({ currentUser, logout }) {
 
   return (
     <div className="flex justify-center bg-zinc-900 h-screen w-full font-sans text-slate-800">
-      <div className="w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
+      <div className="app-safe-area w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-slate-800 shadow-2xl">
 
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto pb-28 scrollbar-hide">
@@ -103,11 +103,16 @@ function AuthenticatedApp({ currentUser, logout }) {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [hasSeenOnboarding, setHasSeenOnboarding] = useLocalStorage('assistrio-onboarding-v2', false);
   const [notes, setNotes] = useLocalStorage('assistrio-notes-v2', Array.isArray(INITIAL_NOTES) ? INITIAL_NOTES : []);
+  const [teamNotes, setTeamNotes] = useLocalStorage('assistrio-team-notes-v1', []);
   const [deletedNotes, setDeletedNotes] = useLocalStorage('assistrio-deleted-notes-v2', []);
   const [activities, setActivities] = useLocalStorage('assistrio-activities-v2', Array.isArray(INITIAL_ACTIVITIES) ? INITIAL_ACTIVITIES : []);
   const [overlay, setOverlay] = useState(null);
   const [calendarToastEvents, setCalendarToastEvents] = useState([]);
-  const bootstrapDone = useRef(false);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const ragBootstrapKeyRef = useRef('');
+
+  const teamEnabled = !!(currentUser?.accountType === 'team' || currentUser?.memberTeamId || currentUser?.ownedTeamId);
+  const allNotes = teamEnabled ? [...(teamNotes || []), ...(notes || [])] : (notes || []);
 
   // Sync scheduled tasks natively to Android/iOS notifications
   useNotificationSync(notes);
@@ -120,6 +125,19 @@ function AuthenticatedApp({ currentUser, logout }) {
         if (Array.isArray(data)) setNotes(data);
       }).catch(console.error);
 
+      if (teamEnabled) {
+        noteService.getTeamAll().then(data => {
+          if (Array.isArray(data)) setTeamNotes(data);
+        }).catch(console.error);
+        teamService.getMy().then((r) => {
+          const members = Array.isArray(r?.team?.members) ? r.team.members : [];
+          setTeamMembers(members);
+        }).catch(() => setTeamMembers([]));
+      } else {
+        setTeamNotes([]);
+        setTeamMembers([]);
+      }
+
       noteService.getDeleted().then(data => {
         if (Array.isArray(data)) setDeletedNotes(data);
       }).catch(console.error);
@@ -128,23 +146,26 @@ function AuthenticatedApp({ currentUser, logout }) {
         if (Array.isArray(data)) setActivities(data);
       }).catch(console.error);
     }
-  }, [currentUser]);
+  }, [currentUser, teamEnabled]);
 
-  // Bootstrap RAG index from existing notes on first mount
   useEffect(() => {
-    if (bootstrapDone.current) return;
-    bootstrapDone.current = true;
-    bootstrapFromNotes(notes).catch((e) => console.warn('RAG bootstrap:', e));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const userKey = currentUser?.id ? String(currentUser.id) : 'anon';
+    const key = `${userKey}:${allNotes?.length || 0}:${allNotes?.[0]?.id || 0}`;
+    if (key === ragBootstrapKeyRef.current) return;
+    ragBootstrapKeyRef.current = key;
+    bootstrapFromNotes(allNotes).catch((e) => console.warn('RAG bootstrap:', e));
+  }, [allNotes, currentUser?.id]);
 
-  const toggleTask = useCallback(async (noteId, taskId) => {
-    const note = notes.find(n => n.id === noteId);
+  const toggleTask = useCallback(async (noteId, taskId, scope = 'personal') => {
+    const list = scope === 'team' ? teamNotes : notes;
+    const setList = scope === 'team' ? setTeamNotes : setNotes;
+    const note = list.find(n => n.id === noteId);
     if (!note) return;
 
     const updatedTasks = (note.tasks || []).map(t => t.id === taskId ? { ...t, done: !t.done } : t);
 
     // Update local state
-    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, tasks: updatedTasks } : n));
+    setList(prev => prev.map(n => n.id === noteId ? { ...n, tasks: updatedTasks } : n));
 
     // Update backend
     try {
@@ -156,7 +177,7 @@ function AuthenticatedApp({ currentUser, logout }) {
     } catch (err) {
       console.error('Failed to update task:', err);
     }
-  }, [notes, setNotes, setActivities]);
+  }, [notes, teamNotes, setNotes, setTeamNotes, setActivities]);
 
   const addNoteAndActivity = useCallback(async (newNote, newActivityOrActivities) => {
     setNotes(prev => [newNote, ...prev]);
@@ -185,8 +206,9 @@ function AuthenticatedApp({ currentUser, logout }) {
     }
   }, [setNotes, setActivities]);
 
-  const updateNote = useCallback(async (noteId, updates) => {
-    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, ...updates } : n));
+  const updateNote = useCallback(async (noteId, updates, scope = 'personal') => {
+    const setList = scope === 'team' ? setTeamNotes : setNotes;
+    setList(prev => prev.map(n => n.id === noteId ? { ...n, ...updates } : n));
     try {
       const updated = await noteService.update(noteId, updates);
       const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
@@ -196,14 +218,16 @@ function AuthenticatedApp({ currentUser, logout }) {
     } catch (err) {
       console.error('Failed to update note:', err);
     }
-  }, [setNotes, setActivities]);
+  }, [setNotes, setTeamNotes, setActivities]);
 
-  const deleteNote = useCallback(async (id) => {
-    const noteToDelete = notes.find(n => n.id === id);
+  const deleteNote = useCallback(async (id, scope = 'personal') => {
+    const list = scope === 'team' ? teamNotes : notes;
+    const setList = scope === 'team' ? setTeamNotes : setNotes;
+    const noteToDelete = list.find(n => n.id === id);
     if (!noteToDelete) return;
 
-    setNotes(prev => prev.filter(n => n.id !== id));
-    setDeletedNotes(prev => [noteToDelete, ...prev]);
+    setList(prev => prev.filter(n => n.id !== id));
+    if (scope === 'personal') setDeletedNotes(prev => [noteToDelete, ...prev]);
 
     try {
       const resp = await noteService.delete(id);
@@ -214,7 +238,7 @@ function AuthenticatedApp({ currentUser, logout }) {
     } catch (err) {
       console.error('Failed to delete note:', err);
     }
-  }, [notes, setNotes, setDeletedNotes, setActivities]);
+  }, [notes, teamNotes, setNotes, setTeamNotes, setDeletedNotes, setActivities]);
 
   const restoreNote = useCallback(async (id) => {
     const noteToRestore = deletedNotes.find(n => n.id === id);
@@ -248,8 +272,10 @@ function AuthenticatedApp({ currentUser, logout }) {
   }, [setDeletedNotes, setActivities]);
 
   const addTask = useCallback(async (noteId, taskText) => {
-    const newTask = { id: Date.now(), text: taskText, done: false };
-    setNotes(prev => prev.map(n => {
+    const newTask = { id: Date.now(), text: taskText, done: false, createdByUserId: currentUser?.id || null };
+    const scope = teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal';
+    const setList = scope === 'team' ? setTeamNotes : setNotes;
+    setList(prev => prev.map(n => {
       if (n.id === noteId) {
         const updatedTasks = [...(n.tasks || []), newTask];
         noteService.update(noteId, { tasks: updatedTasks }).then((updated) => {
@@ -260,35 +286,64 @@ function AuthenticatedApp({ currentUser, logout }) {
       }
       return n;
     }));
-  }, [setNotes, setActivities]);
+  }, [setNotes, setTeamNotes, setActivities, teamEnabled, teamNotes, currentUser?.id]);
 
-  const updateTask = useCallback(async (noteId, taskId, newText) => {
-    setNotes(prev => prev.map(n => {
+  const updateTask = useCallback(async (noteId, taskId, updates, scopeHint = null) => {
+    const scope = scopeHint || (teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal');
+    const setList = scope === 'team' ? setTeamNotes : setNotes;
+    const patch = typeof updates === 'string' ? { text: updates } : (updates || {});
+    setList(prev => prev.map(n => {
       if (n.id === noteId) {
-        const updatedTasks = (n.tasks || []).map(t => t.id === taskId ? { ...t, text: newText } : t);
+        const updatedTasks = (n.tasks || []).map(t => t.id === taskId ? { ...t, ...patch } : t);
         noteService.update(noteId, { tasks: updatedTasks }).then((updated) => {
           const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
           if (createdActivities.length) setActivities(prev => [...createdActivities, ...prev]);
-        }).catch(console.error);
+        }).catch(async (e) => {
+          if (e?.response?.status === 403) {
+            try {
+              if (scope === 'team') {
+                const fresh = await noteService.getTeamAll();
+                if (Array.isArray(fresh)) setTeamNotes(fresh);
+              } else {
+                const fresh = await noteService.getAll();
+                if (Array.isArray(fresh)) setNotes(fresh);
+              }
+            } catch (err) { }
+          }
+        });
         return { ...n, tasks: updatedTasks };
       }
       return n;
     }));
-  }, [setNotes, setActivities]);
+  }, [setNotes, setTeamNotes, setActivities, teamEnabled, teamNotes]);
 
-  const deleteTask = useCallback(async (noteId, taskId) => {
-    setNotes(prev => prev.map(n => {
+  const deleteTask = useCallback(async (noteId, taskId, scopeHint = null) => {
+    const scope = scopeHint || (teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal');
+    const setList = scope === 'team' ? setTeamNotes : setNotes;
+    setList(prev => prev.map(n => {
       if (n.id === noteId) {
         const updatedTasks = (n.tasks || []).filter(t => t.id !== taskId);
         noteService.update(noteId, { tasks: updatedTasks }).then((updated) => {
           const createdActivities = Array.isArray(updated?.activities) ? updated.activities : [];
           if (createdActivities.length) setActivities(prev => [...createdActivities, ...prev]);
-        }).catch(console.error);
+        }).catch(async (e) => {
+          if (e?.response?.status === 403) {
+            try {
+              if (scope === 'team') {
+                const fresh = await noteService.getTeamAll();
+                if (Array.isArray(fresh)) setTeamNotes(fresh);
+              } else {
+                const fresh = await noteService.getAll();
+                if (Array.isArray(fresh)) setNotes(fresh);
+              }
+            } catch (err) { }
+          }
+        });
         return { ...n, tasks: updatedTasks };
       }
       return n;
     }));
-  }, [setNotes, setActivities]);
+  }, [setNotes, setTeamNotes, setActivities, teamEnabled, teamNotes]);
 
   const scheduleFromNote = useCallback(async (noteId) => {
     const note = notes.find(n => n.id === noteId);
@@ -322,11 +377,15 @@ function AuthenticatedApp({ currentUser, logout }) {
     }
   }, [notes, setActivities]);
 
-  const currentNote = overlay?.type === 'note' ? notes.find(n => n.id === overlay.id) : null;
+  const currentNote = overlay?.type === 'note'
+    ? (overlay.scope === 'team'
+      ? teamNotes.find(n => n.id === overlay.id) || notes.find(n => n.id === overlay.id)
+      : notes.find(n => n.id === overlay.id) || teamNotes.find(n => n.id === overlay.id))
+    : null;
 
   return (
     <div className="flex justify-center bg-zinc-900 h-screen w-full font-sans text-slate-800">
-      <div className="w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-zinc-800 shadow-2xl">
+      <div className="app-safe-area w-full max-w-md bg-[#111111] h-full relative flex flex-col overflow-hidden sm:border-x sm:border-zinc-800 shadow-2xl">
 
         {!hasSeenOnboarding ? (
           <Onboarding onComplete={() => setHasSeenOnboarding(true)} />
@@ -336,22 +395,29 @@ function AuthenticatedApp({ currentUser, logout }) {
             <div className="flex-1 overflow-y-auto pb-28 scrollbar-hide">
               {currentTab === 'dashboard' && (
                 <Dashboard
-                  pendingTasks={notes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
+                  pendingTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
                   notes={notes}
                   deletedNotes={deletedNotes}
-                  toggleTask={toggleTask}
+                  toggleTask={(noteId, taskId) => toggleTask(noteId, taskId, teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal')}
                   deleteTask={deleteTask}
-                  openNote={(id, tab = 'summary') => setOverlay({ type: 'note', id, tab })}
+                  openNote={(id, tab = 'summary') => setOverlay({ type: 'note', id, tab, scope: teamEnabled && teamNotes?.some(n => n.id === id) ? 'team' : 'personal' })}
                   goToLocker={() => setCurrentTab('locker')}
                 />
               )}
               {currentTab === 'locker' && (
                 <Locker
                   notes={notes}
-                  pendingTasks={notes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
-                  completedTasks={notes.flatMap(n => (n.tasks || []).filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title })))}
-                  toggleTask={toggleTask}
-                  openNote={(id, tab = 'summary') => setOverlay({ type: 'note', id, tab })}
+                  teamNotes={teamNotes}
+                  teamEnabled={teamEnabled}
+                  teamMembers={teamMembers}
+                  currentUserId={String(currentUser?.id || '')}
+                  pendingTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: n.teamId ? 'team' : 'personal' })))}
+                  completedTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: n.teamId ? 'team' : 'personal' })))}
+                  toggleTask={(noteId, taskId) => toggleTask(noteId, taskId, teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal')}
+                  openNote={(id, tab = 'summary', scope = null) => {
+                    const resolvedScope = scope || (teamEnabled && teamNotes?.some(n => n.id === id) ? 'team' : 'personal');
+                    setOverlay({ type: 'note', id, tab, scope: resolvedScope });
+                  }}
                   deleteNote={deleteNote}
                   deleteTask={deleteTask}
                   updateTask={updateTask}
@@ -416,12 +482,13 @@ function AuthenticatedApp({ currentUser, logout }) {
                 note={currentNote}
                 initialTab={overlay.tab}
                 onClose={() => setOverlay(null)}
-                toggleTask={toggleTask}
-                deleteNote={deleteNote}
-                updateNote={updateNote}
-                addTask={addTask}
-                deleteTask={deleteTask}
-                updateTask={updateTask}
+                toggleTask={(noteId, taskId) => toggleTask(noteId, taskId, overlay.scope || 'personal')}
+                deleteNote={(noteId) => deleteNote(noteId, overlay.scope || 'personal')}
+                updateNote={(noteId, updates) => updateNote(noteId, updates, overlay.scope || 'personal')}
+                addTask={(noteId, text) => addTask(noteId, text)}
+                deleteTask={(noteId, taskId) => deleteTask(noteId, taskId)}
+                updateTask={(noteId, taskId, u) => updateTask(noteId, taskId, u, overlay.scope || null)}
+                teamMembers={teamMembers}
                 scheduleFromNote={scheduleFromNote}
               />
             )}

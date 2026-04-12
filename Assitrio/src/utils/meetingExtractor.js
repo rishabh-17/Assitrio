@@ -11,9 +11,12 @@ const MEETING_EXTRACT_PROMPT = `You are a meeting scheduler AI. Analyze this con
   "meetings": [
     {
       "title": "Short title for the meeting (e.g. 'Budget Review with Rahul')",
-      "date": "YYYY-MM-DD format (resolve relative dates like 'tomorrow', 'next Monday' based on today being TODAY_DATE)",
-      "startTime": "HH:MM in 24h format",
+      "date": "YYYY-MM-DD format (resolve relative dates like 'tomorrow', 'next Monday' based on today being TODAY_DATE_LOCAL)",
+      "startTime": "HH:MM in 24h format (local time in USER_TIMEZONE)",
       "endTime": "HH:MM in 24h format (if not mentioned, add 30 min to startTime)",
+      "timeZone": "IANA timezone string, must equal USER_TIMEZONE",
+      "startISO": "RFC3339 timestamp including timezone offset, e.g. 2026-04-12T17:30:00+05:30",
+      "endISO": "RFC3339 timestamp including timezone offset, e.g. 2026-04-12T18:00:00+05:30",
       "attendees": ["email@example.com"],
       "description": "Brief description of what the meeting is about"
     }
@@ -23,13 +26,15 @@ const MEETING_EXTRACT_PROMPT = `You are a meeting scheduler AI. Analyze this con
 RULES:
 - hasMeeting should be true ONLY if the conversation explicitly mentions scheduling/booking/setting up a meeting, call, appointment, or discussion at a specific date/time
 - If someone just mentions "we should meet sometime" without a concrete date, hasMeeting should be false
-- Resolve relative dates: "tomorrow" = TOMORROW_DATE, "next Monday" = NEXT_MONDAY_DATE, "this Friday" = THIS_FRIDAY_DATE, etc.
-- If end time is not mentioned, assume 30 minutes after start time
+- Resolve relative dates using the user's local timezone: "tomorrow" = TOMORROW_DATE_LOCAL, "next Monday" = NEXT_MONDAY_DATE_LOCAL, "this Friday" = THIS_FRIDAY_DATE_LOCAL, etc.
+- If the meeting is scheduled for "today" but the time has already passed, schedule it for the next valid future occurrence (usually tomorrow) unless the transcript explicitly indicates it already happened.
+- Always include both: (date/startTime/endTime/timeZone) AND (startISO/endISO) to avoid timezone mistakes.
 - attendees should only include email addresses if explicitly mentioned; otherwise use an empty array
 - If no meeting is found, return: {"hasMeeting": false, "meetings": []}
 
-Today's date is: TODAY_DATE
-Current time is: CURRENT_TIME
+User timezone is: USER_TIMEZONE
+Today's local date is: TODAY_DATE_LOCAL
+Current local time is: CURRENT_TIME_LOCAL
 
 Transcript:
 `;
@@ -50,15 +55,24 @@ function buildPromptWithDates(transcript) {
   const thisFriday = new Date(now);
   thisFriday.setDate(thisFriday.getDate() + ((5 + 7 - thisFriday.getDay()) % 7 || 7));
 
-  const fmt = (d) => d.toISOString().split('T')[0];
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+
+  const localIsoDate = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const timeFmt = () => now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
 
   return MEETING_EXTRACT_PROMPT
-    .replaceAll('TODAY_DATE', fmt(now))
-    .replaceAll('TOMORROW_DATE', fmt(tomorrow))
-    .replaceAll('NEXT_MONDAY_DATE', fmt(nextMonday))
-    .replaceAll('THIS_FRIDAY_DATE', fmt(thisFriday))
-    .replaceAll('CURRENT_TIME', timeFmt())
+    .replaceAll('USER_TIMEZONE', tz)
+    .replaceAll('TODAY_DATE_LOCAL', localIsoDate(now))
+    .replaceAll('TOMORROW_DATE_LOCAL', localIsoDate(tomorrow))
+    .replaceAll('NEXT_MONDAY_DATE_LOCAL', localIsoDate(nextMonday))
+    .replaceAll('THIS_FRIDAY_DATE_LOCAL', localIsoDate(thisFriday))
+    .replaceAll('CURRENT_TIME_LOCAL', timeFmt())
     + transcript;
 }
 
@@ -109,26 +123,52 @@ export async function extractMeetingDetails(transcript) {
  * Ensures ISO date-time format for start/end.
  */
 function normalizeMeeting(m) {
-  if (!m || !m.title || !m.date) return null;
+  if (!m || !m.title) return null;
 
   try {
-    const date = m.date; // Expected YYYY-MM-DD
+    const title = m.title;
+    const description = m.description || '';
+    const attendees = Array.isArray(m.attendees) ? m.attendees.filter((e) => typeof e === 'string' && e.includes('@')) : [];
+
+    const preferISO = typeof m.startISO === 'string' && typeof m.endISO === 'string';
+    if (preferISO) {
+      const start = new Date(m.startISO);
+      const end = new Date(m.endISO);
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        return { title, description, startTime: start.toISOString(), endTime: end.toISOString(), attendees };
+      }
+    }
+
+    const date = m.date;
+    if (!date || typeof date !== 'string') return null;
     const startTime = m.startTime || '10:00';
     const endTimeParsed = m.endTime || addMinutes(startTime, 30);
 
-    // Build ISO strings
-    const startISO = `${date}T${startTime}:00`;
-    const endISO = `${date}T${endTimeParsed}:00`;
+    const [y, mo, d] = date.split('-').map((x) => Number(x));
+    const [sh, sm] = String(startTime).split(':').map((x) => Number(x));
+    const [eh, em] = String(endTimeParsed).split(':').map((x) => Number(x));
+    if (![y, mo, d, sh, sm, eh, em].every((n) => Number.isFinite(n))) return null;
 
-    // Validate dates are parseable
-    if (isNaN(new Date(startISO).getTime())) return null;
+    let startLocal = new Date(y, mo - 1, d, sh, sm, 0, 0);
+    let endLocal = new Date(y, mo - 1, d, eh, em, 0, 0);
+    if (Number.isNaN(startLocal.getTime()) || Number.isNaN(endLocal.getTime())) return null;
+    if (endLocal <= startLocal) endLocal = new Date(startLocal.getTime() + 30 * 60 * 1000);
+
+    const now = new Date();
+    const isSameLocalDay = startLocal.getFullYear() === now.getFullYear() &&
+      startLocal.getMonth() === now.getMonth() &&
+      startLocal.getDate() === now.getDate();
+    if (isSameLocalDay && startLocal.getTime() < now.getTime() - 2 * 60 * 1000) {
+      startLocal = new Date(startLocal.getTime() + 24 * 60 * 60 * 1000);
+      endLocal = new Date(endLocal.getTime() + 24 * 60 * 60 * 1000);
+    }
 
     return {
-      title: m.title,
-      description: m.description || '',
-      startTime: startISO,
-      endTime: endISO,
-      attendees: Array.isArray(m.attendees) ? m.attendees.filter((e) => typeof e === 'string' && e.includes('@')) : [],
+      title,
+      description,
+      startTime: startLocal.toISOString(),
+      endTime: endLocal.toISOString(),
+      attendees,
     };
   } catch {
     return null;
@@ -195,14 +235,35 @@ function regexFallbackExtract(transcript) {
     date = tomorrow.toISOString().split('T')[0];
   }
 
+  const now = new Date();
+  const [y, mo, d] = date.split('-').map((x) => Number(x));
+  const [sh, sm] = startTime.split(':').map((x) => Number(x));
+  const [eh, em] = endTime.split(':').map((x) => Number(x));
+  if (![y, mo, d, sh, sm, eh, em].every((n) => Number.isFinite(n))) {
+    return { hasMeeting: false, meetings: [] };
+  }
+  let startLocal = new Date(y, mo - 1, d, sh, sm, 0, 0);
+  let endLocal = new Date(y, mo - 1, d, eh, em, 0, 0);
+  if (Number.isNaN(startLocal.getTime()) || Number.isNaN(endLocal.getTime())) {
+    return { hasMeeting: false, meetings: [] };
+  }
+  if (endLocal <= startLocal) endLocal = new Date(startLocal.getTime() + 30 * 60 * 1000);
+  const isSameLocalDay = startLocal.getFullYear() === now.getFullYear() &&
+    startLocal.getMonth() === now.getMonth() &&
+    startLocal.getDate() === now.getDate();
+  if (isSameLocalDay && startLocal.getTime() < now.getTime() - 2 * 60 * 1000) {
+    startLocal = new Date(startLocal.getTime() + 24 * 60 * 60 * 1000);
+    endLocal = new Date(endLocal.getTime() + 24 * 60 * 60 * 1000);
+  }
+
   return {
     hasMeeting: true,
     meetings: [
       {
         title: 'Meeting (auto-detected)',
         description: 'Auto-detected from conversation by Assistrio.',
-        startTime: `${date}T${startTime}:00`,
-        endTime: `${date}T${endTime}:00`,
+        startTime: startLocal.toISOString(),
+        endTime: endLocal.toISOString(),
         attendees: [],
       },
     ],

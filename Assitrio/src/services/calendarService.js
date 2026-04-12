@@ -95,11 +95,18 @@ export async function createGoogleEvent({ title, description, startTime, endTime
   const token = getGoogleTokenData();
   if (!token) throw new Error('Google Calendar not connected');
 
+  const normalizeIso = (value) => {
+    if (!value) return '';
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) return d.toISOString();
+    return String(value);
+  };
+
   const event = {
     summary: title,
     description: description || `Auto-scheduled by Assistrio from conversation transcript.`,
-    start: { dateTime: startTime, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
-    end: { dateTime: endTime, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    start: { dateTime: normalizeIso(startTime) },
+    end: { dateTime: normalizeIso(endTime) },
     reminders: { useDefault: true },
   };
 
@@ -272,7 +279,13 @@ export async function createMicrosoftEvent({ title, description, startTime, endT
   const token = getMsTokenData();
   if (!token) throw new Error('Microsoft Calendar not connected');
 
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const toUtcLocalDateTimeString = (value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) {
+      throw new Error('Invalid start/end time');
+    }
+    return d.toISOString().slice(0, 19);
+  };
 
   const event = {
     subject: title,
@@ -280,8 +293,8 @@ export async function createMicrosoftEvent({ title, description, startTime, endT
       contentType: 'Text',
       content: description || 'Auto-scheduled by Assistrio from conversation transcript.',
     },
-    start: { dateTime: startTime, timeZone: tz },
-    end: { dateTime: endTime, timeZone: tz },
+    start: { dateTime: toUtcLocalDateTimeString(startTime), timeZone: 'UTC' },
+    end: { dateTime: toUtcLocalDateTimeString(endTime), timeZone: 'UTC' },
     isReminderOn: true,
     reminderMinutesBeforeStart: 15,
   };

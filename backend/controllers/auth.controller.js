@@ -1,10 +1,22 @@
 const User = require('../models/User');
+const Team = require('../models/Team');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+function normalizeString(v) {
+  if (v === undefined || v === null) return '';
+  return String(v).trim();
+}
+
+function normalizeAccountType(v) {
+  const s = normalizeString(v).toLowerCase();
+  return s === 'team' ? 'team' : 'personal';
+}
+
 exports.signup = async (req, res) => {
   try {
-    const { username, password, displayName } = req.body;
+    const { username, password, displayName, accountType, teamName } = req.body;
+    const normalizedAccountType = normalizeAccountType(accountType);
 
     let user = await User.findOne({ username });
     if (user) return res.status(400).json({ error: 'Username already exists' });
@@ -16,12 +28,31 @@ exports.signup = async (req, res) => {
       username,
       password: hashedPassword,
       displayName: displayName || username,
-      plan: 'Free'
+      plan: 'Free',
+      accountType: normalizedAccountType
     });
 
     await user.save();
 
-    const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, process.env.JWT_SECRET || 'your_jwt_secret');
+    let createdTeamId = null;
+    if (normalizedAccountType === 'team') {
+      const tn = normalizeString(teamName) || `${user.displayName || user.username}'s Team`;
+      const team = new Team({
+        name: tn,
+        ownerId: user._id,
+        members: [{ userId: user._id, role: 'owner' }]
+      });
+      await team.save();
+      user.ownedTeamId = team._id;
+      user.memberTeamId = team._id;
+      await user.save();
+      createdTeamId = team._id;
+    }
+
+    const token = jwt.sign(
+      { id: user._id, username: user.username, role: user.role, accountType: user.accountType, ownedTeamId: createdTeamId, memberTeamId: user.memberTeamId || null },
+      process.env.JWT_SECRET || 'your_jwt_secret'
+    );
 
     res.status(201).json({
       success: true,
@@ -31,7 +62,10 @@ exports.signup = async (req, res) => {
         username: user.username,
         displayName: user.displayName,
         plan: user.plan,
-        role: user.role
+        role: user.role,
+        accountType: user.accountType,
+        ownedTeamId: user.ownedTeamId || null,
+        memberTeamId: user.memberTeamId || null
       }
     });
   } catch (err) {
@@ -49,7 +83,10 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, process.env.JWT_SECRET || 'your_jwt_secret');
+    const token = jwt.sign(
+      { id: user._id, username: user.username, role: user.role, accountType: user.accountType, ownedTeamId: user.ownedTeamId || null, memberTeamId: user.memberTeamId || null },
+      process.env.JWT_SECRET || 'your_jwt_secret'
+    );
 
     res.json({
       success: true,
@@ -62,7 +99,10 @@ exports.login = async (req, res) => {
         mobile: user.mobile,
         profilePhoto: user.profilePhoto,
         plan: user.plan,
-        role: user.role
+        role: user.role,
+        accountType: user.accountType,
+        ownedTeamId: user.ownedTeamId || null,
+        memberTeamId: user.memberTeamId || null
       }
     });
   } catch (err) {
@@ -94,7 +134,10 @@ exports.googleLogin = async (req, res) => {
       await user.save();
     }
 
-    const token = jwt.sign({ id: user._id, username: user.username, role: user.role }, process.env.JWT_SECRET || 'your_jwt_secret');
+    const token = jwt.sign(
+      { id: user._id, username: user.username, role: user.role, accountType: user.accountType, ownedTeamId: user.ownedTeamId || null, memberTeamId: user.memberTeamId || null },
+      process.env.JWT_SECRET || 'your_jwt_secret'
+    );
 
     res.json({
       success: true,
@@ -106,7 +149,10 @@ exports.googleLogin = async (req, res) => {
         email: user.email,
         profilePhoto: user.profilePhoto,
         plan: user.plan,
-        role: user.role
+        role: user.role,
+        accountType: user.accountType,
+        ownedTeamId: user.ownedTeamId || null,
+        memberTeamId: user.memberTeamId || null
       }
     });
   } catch (err) {

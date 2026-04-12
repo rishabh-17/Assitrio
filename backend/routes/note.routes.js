@@ -8,6 +8,7 @@ router.post('/shared', noteController.verifySharedNote);
 router.use(authMiddleware);
 
 router.get('/', noteController.getNotes);
+router.get('/team', noteController.getTeamNotes);
 router.get('/deleted', noteController.getDeletedNotes);
 router.post('/', noteController.createNote);
 router.put('/:id', noteController.updateNote);

@@ -24,7 +24,7 @@ api.interceptors.request.use(
 // Add a response interceptor to handle data extraction and common errors
 api.interceptors.response.use(
     (response) => {
-        try { setApiBaseUrl(response.config.baseURL); } catch (e) {}
+        try { setApiBaseUrl(response.config.baseURL); } catch (e) { }
         return response.data;
     },
     (error) => {
@@ -37,6 +37,7 @@ api.interceptors.response.use(
 
 export const noteService = {
     getAll: async () => api.get('/notes'),
+    getTeamAll: async () => api.get('/notes/team'),
     getDeleted: async () => api.get('/notes/deleted'),
     create: async (note) => api.post('/notes', note),
     update: async (id, updates) => api.put(`/notes/${id}`, updates),
@@ -95,6 +96,15 @@ export const paymentService = {
 export const aiService = {
     getLivekitToken: async ({ roomName } = {}) => api.post('/ai/livekit/token', { roomName }),
     getChatContext: async () => api.get('/ai/chat-context')
+};
+
+export const teamService = {
+    create: async ({ name } = {}) => api.post('/teams', { name }),
+    getMy: async () => api.get('/teams/my'),
+    invite: async (teamId, identifier) => api.post(`/teams/${teamId}/invite`, { identifier }),
+    getInvitations: async () => api.get('/teams/invitations'),
+    acceptInvite: async (inviteId) => api.post(`/teams/invitations/${inviteId}/accept`),
+    rejectInvite: async (inviteId) => api.post(`/teams/invitations/${inviteId}/reject`)
 };
 
 export default api;

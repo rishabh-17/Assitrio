@@ -1,5 +1,7 @@
 const Note = require('../models/Note');
 const Activity = require('../models/Activity');
+const User = require('../models/User');
+const Team = require('../models/Team');
 
 function safeToNumber(v) {
   const n = Number(v);
@@ -46,9 +48,114 @@ function getTaskMap(tasks) {
   return map;
 }
 
+async function getUserTeamId(req) {
+  const fromToken = req.user?.memberTeamId || req.user?.ownedTeamId || null;
+  if (fromToken) return fromToken;
+  try {
+    const u = await User.findById(req.user.id).select('memberTeamId ownedTeamId');
+    return u?.memberTeamId || u?.ownedTeamId || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function accessibleNoteQuery(req, noteId) {
+  const teamId = await getUserTeamId(req);
+  const or = [{ userId: req.user.id }];
+  if (teamId) or.push({ teamId });
+  return { id: noteId, $or: or };
+}
+
+function normalizeObjectIdString(v) {
+  if (!v) return null;
+  try {
+    return String(v);
+  } catch (e) {
+    return null;
+  }
+}
+
+function taskCreatorIdForExisting(noteDoc, task) {
+  const t = task || {};
+  const explicit = normalizeObjectIdString(t.createdByUserId);
+  if (explicit) return explicit;
+  const noteCreator = normalizeObjectIdString(noteDoc?.createdByUserId);
+  if (noteCreator) return noteCreator;
+  return normalizeObjectIdString(noteDoc?.userId);
+}
+
+async function sanitizeAndValidateTasks(req, noteBefore, proposedTasks) {
+  if (!Array.isArray(proposedTasks)) return null;
+
+  const prevMap = getTaskMap(noteBefore?.tasks || []);
+  const next = [];
+
+  const removedTaskIds = [];
+  for (const [id] of prevMap.entries()) {
+    const stillExists = proposedTasks.some((t) => String(t?.id) === id);
+    if (!stillExists) removedTaskIds.push(id);
+  }
+
+  if (noteBefore?.teamId && removedTaskIds.length > 0) {
+    const requesterId = String(req.user.id);
+    for (const taskId of removedTaskIds) {
+      const prevTask = prevMap.get(taskId);
+      const creatorId = taskCreatorIdForExisting(noteBefore, prevTask);
+      if (creatorId && creatorId !== requesterId) {
+        const err = new Error('Only the task creator can delete this task');
+        err.status = 403;
+        throw err;
+      }
+    }
+  }
+
+  let teamMemberIdSet = null;
+  const hasAssigneeUserId = proposedTasks.some((t) => t?.assigneeUserId);
+  if (noteBefore?.teamId && hasAssigneeUserId) {
+    const team = await Team.findById(noteBefore.teamId).select('ownerId members.userId');
+    if (!team) {
+      const err = new Error('Team not found');
+      err.status = 404;
+      throw err;
+    }
+    teamMemberIdSet = new Set();
+    teamMemberIdSet.add(String(team.ownerId));
+    for (const m of (team.members || [])) {
+      if (m?.userId) teamMemberIdSet.add(String(m.userId));
+    }
+  }
+
+  for (const raw of proposedTasks) {
+    if (!raw || raw.id === undefined || raw.id === null) continue;
+    const idStr = String(raw.id);
+    const prevTask = prevMap.get(idStr);
+    const createdByUserId = prevTask?.createdByUserId || taskCreatorIdForExisting(noteBefore, prevTask) || req.user.id;
+
+    const assigneeUserIdRaw = raw.assigneeUserId || null;
+    const assigneeUserId = assigneeUserIdRaw ? normalizeObjectIdString(assigneeUserIdRaw) : null;
+    if (noteBefore?.teamId && assigneeUserId && teamMemberIdSet && !teamMemberIdSet.has(assigneeUserId)) {
+      const err = new Error('Assignee must be a team member');
+      err.status = 400;
+      throw err;
+    }
+
+    next.push({
+      ...raw,
+      createdByUserId,
+      assigneeUserId: assigneeUserIdRaw ? assigneeUserIdRaw : null,
+    });
+  }
+
+  return next;
+}
+
 exports.getNotes = async (req, res) => {
   try {
-    const notes = await Note.find({ userId: req.user.id, deleted: false }).sort({ createdAt: -1 });
+    const notes = await Note.find({
+      userId: req.user.id,
+      deleted: false,
+      $or: [{ teamId: { $exists: false } }, { teamId: null }]
+    }).sort({ createdAt: -1 });
     res.json(notes);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -57,8 +164,32 @@ exports.getNotes = async (req, res) => {
 
 exports.getDeletedNotes = async (req, res) => {
   try {
-    const notes = await Note.find({ userId: req.user.id, deleted: true }).sort({ createdAt: -1 });
+    const notes = await Note.find({
+      userId: req.user.id,
+      deleted: true,
+      $or: [{ teamId: { $exists: false } }, { teamId: null }]
+    }).sort({ createdAt: -1 });
     res.json(notes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getTeamNotes = async (req, res) => {
+  try {
+    const teamId = await getUserTeamId(req);
+    if (!teamId) return res.json([]);
+    const notes = await Note.find({ teamId, deleted: false }).sort({ createdAt: -1 });
+    const normalized = notes.map((n) => {
+      const tasks = Array.isArray(n.tasks) ? n.tasks.map((t) => ({
+        ...t.toObject?.() || t,
+        createdByUserId: t?.createdByUserId || n.createdByUserId || n.userId || null
+      })) : [];
+      const obj = n.toObject();
+      obj.tasks = tasks;
+      return obj;
+    });
+    res.json(normalized);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -66,9 +197,23 @@ exports.getDeletedNotes = async (req, res) => {
 
 exports.createNote = async (req, res) => {
   try {
+    const teamId = await getUserTeamId(req);
+    const isTeamAccount = req.user?.accountType === 'team';
+    const body = { ...(req.body || {}) };
+    delete body.teamId;
+    delete body.createdByUserId;
+    if (Array.isArray(body.tasks)) {
+      body.tasks = body.tasks.map((t) => ({
+        ...t,
+        createdByUserId: t?.createdByUserId || req.user.id
+      }));
+    }
+
     const note = new Note({
-      ...req.body,
+      ...body,
       userId: req.user.id,
+      createdByUserId: req.user.id,
+      teamId: isTeamAccount ? teamId : undefined,
       id: req.body.id || Date.now()
     });
     await note.save();
@@ -82,7 +227,7 @@ exports.createNote = async (req, res) => {
       icon: isRecording ? 'mic' : 'note',
       type: isRecording ? 'recording' : 'note',
       noteId: note.id,
-      metadata: { source, duration: note.duration }
+      metadata: { source, duration: note.duration, teamId: note.teamId ? String(note.teamId) : null }
     });
     res.status(201).json({ note, activities: activity ? [activity] : [] });
   } catch (err) {
@@ -93,19 +238,27 @@ exports.createNote = async (req, res) => {
 exports.updateNote = async (req, res) => {
   try {
     const noteId = req.params.id;
-    const before = await Note.findOne({ userId: req.user.id, id: noteId });
+    const query = await accessibleNoteQuery(req, noteId);
+    const before = await Note.findOne(query);
+    if (!before) return res.status(404).json({ error: 'Note not found' });
+
+    const payload = req.body || {};
+    const updates = { ...payload };
+    if (Array.isArray(payload.tasks)) {
+      updates.tasks = await sanitizeAndValidateTasks(req, before, payload.tasks);
+    }
+
     const note = await Note.findOneAndUpdate(
-      { userId: req.user.id, id: noteId },
-      { $set: req.body },
+      query,
+      { $set: updates },
       { new: true }
     );
     if (!note) return res.status(404).json({ error: 'Note not found' });
 
     const createdActivities = [];
-    const payload = req.body || {};
-    const updatedTranscript = typeof payload.transcript === 'string' ? payload.transcript : null;
-    const updatedCallStatus = typeof payload.callStatus === 'string' ? payload.callStatus : null;
-    const updatedTasks = Array.isArray(payload.tasks) ? payload.tasks : null;
+    const updatedTranscript = typeof updates.transcript === 'string' ? updates.transcript : null;
+    const updatedCallStatus = typeof updates.callStatus === 'string' ? updates.callStatus : null;
+    const updatedTasks = Array.isArray(updates.tasks) ? updates.tasks : null;
 
     if (before) {
       const source = typeof note.source === 'string' ? note.source : 'note';
@@ -195,14 +348,16 @@ exports.updateNote = async (req, res) => {
 
     res.json({ note, activities: createdActivities });
   } catch (err) {
+    if (err && err.status) return res.status(err.status).json({ error: err.message });
     res.status(500).json({ error: err.message });
   }
 };
 
 exports.deleteNote = async (req, res) => {
   try {
+    const query = await accessibleNoteQuery(req, req.params.id);
     const note = await Note.findOneAndUpdate(
-      { userId: req.user.id, id: req.params.id },
+      query,
       { $set: { deleted: true } },
       { new: true }
     );
@@ -222,7 +377,8 @@ exports.deleteNote = async (req, res) => {
 
 exports.permanentlyDeleteNote = async (req, res) => {
   try {
-    const note = await Note.findOneAndDelete({ userId: req.user.id, id: req.params.id });
+    const query = await accessibleNoteQuery(req, req.params.id);
+    const note = await Note.findOneAndDelete(query);
     if (!note) return res.status(404).json({ error: 'Note not found' });
     const activity = await logActivity(req, {
       title: 'Note permanently deleted',
@@ -239,8 +395,9 @@ exports.permanentlyDeleteNote = async (req, res) => {
 
 exports.restoreNote = async (req, res) => {
   try {
+    const query = await accessibleNoteQuery(req, req.params.id);
     const note = await Note.findOneAndUpdate(
-      { userId: req.user.id, id: req.params.id },
+      query,
       { $set: { deleted: false } },
       { new: true }
     );

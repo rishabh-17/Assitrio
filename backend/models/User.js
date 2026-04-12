@@ -8,6 +8,9 @@ const userSchema = new mongoose.Schema({
   mobile: { type: String },
   profilePhoto: { type: String },
   plan: { type: String, default: 'Free' },
+  accountType: { type: String, enum: ['personal', 'team'], default: 'personal' },
+  ownedTeamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
+  memberTeamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
   googleSub: { type: String },
   usage: {
     listenSeconds: { type: Number, default: 0 },

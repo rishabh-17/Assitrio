@@ -44,7 +44,7 @@ const dk = {
   penBtn: { padding: 6, color: '#374151', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
 };
 
-export default function NoteDetail({ note, initialTab = 'summary', onClose, toggleTask, deleteNote, updateNote, updateTask, deleteTask, addTask }) {
+export default function NoteDetail({ note, initialTab = 'summary', onClose, toggleTask, deleteNote, updateNote, updateTask, deleteTask, addTask, teamMembers = [] }) {
   if (!note) return null;
 
   const [editingField, setEditingField] = useState(null);
@@ -278,6 +278,28 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
                         {task.priority && task.priority !== 'Normal' && <span style={dk.taskChip(task.priority === 'Critical' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', task.priority === 'Critical' ? '#f87171' : '#fbbf24', task.priority === 'Critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)')}>{task.priority}</span>}
                         {task.assignee && <span style={dk.taskChip('rgba(167,139,250,0.1)', '#a78bfa', 'rgba(167,139,250,0.2)')}>@{task.assignee.split('@')[0]}</span>}
                       </div>
+                      {note.teamId && Array.isArray(teamMembers) && teamMembers.length > 0 && (
+                        <div style={{ marginTop: 10 }}>
+                          <select
+                            value={task.assigneeUserId ? String(task.assigneeUserId) : ''}
+                            onChange={(e) => {
+                              const assigneeUserId = e.target.value || '';
+                              const member = assigneeUserId ? teamMembers.find((m) => String(m.userId) === String(assigneeUserId)) : null;
+                              const assignee = member ? (member.email || member.username || member.displayName || '') : '';
+                              const tasks = (note.tasks || []).map((t) => t.id === task.id ? { ...t, assigneeUserId: assigneeUserId || null, assignee } : t);
+                              updateNote(note.id, { tasks });
+                            }}
+                            style={{ width: '100%', padding: '10px 12px', backgroundColor: '#161616', border: '1px solid #2a2a2a', borderRadius: 12, color: '#9ca3af', fontSize: 12, fontWeight: 700, outline: 'none' }}
+                          >
+                            <option value="">Unassigned</option>
+                            {teamMembers.map((m) => (
+                              <option key={String(m.userId)} value={String(m.userId)}>
+                                {(m.displayName || m.username || m.email || 'Member')}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

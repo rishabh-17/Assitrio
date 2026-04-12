@@ -90,7 +90,14 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const login = useCallback(async (username, password) => {
+  const patchSession = useCallback((updates) => {
+    if (!updates || typeof updates !== 'object') return;
+    const next = { ...(currentUser || {}), ...updates };
+    delete next.password;
+    saveSession(next);
+  }, [currentUser]);
+
+  const login = useCallback(async (username, password, loginKind = 'personal') => {
     try {
       const bases = [getApiBaseUrl(), ...getApiBaseUrlCandidates()].filter(Boolean);
       const uniqueBases = [...new Set(bases)];
@@ -109,8 +116,14 @@ export function AuthProvider({ children }) {
           const data = json || {};
           authLog('login:result', { base, status: res.status, ok: res.ok, success: !!data.success, error: data.error || null });
           if (res.ok && data.success) {
+            const userObj = data.user || {};
+            const accountType = userObj.accountType || 'personal';
+            if (loginKind === 'team' && accountType !== 'team') {
+              lastError = 'This is not a team account. Please use Personal login.';
+              continue;
+            }
             setApiBaseUrl(base);
-            const session = { ...data.user, token: data.token };
+            const session = { ...userObj, token: data.token };
             saveSession(session);
             userService.getUsage().then(r => setUsage(r.usage)).catch(console.error);
             syncCalendarTokensFromBackend().catch(console.error);
@@ -133,7 +146,7 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const signup = useCallback(async (username, password, displayName) => {
+  const signup = useCallback(async (username, password, displayName, accountType = 'personal', teamName = '') => {
     try {
       const bases = [getApiBaseUrl(), ...getApiBaseUrlCandidates()].filter(Boolean);
       const uniqueBases = [...new Set(bases)];
@@ -146,7 +159,7 @@ export function AuthProvider({ children }) {
           const { res, text, json } = await fetchJsonWithTimeout(`${base}/auth/signup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, displayName })
+            body: JSON.stringify({ username, password, displayName, accountType, teamName })
           });
 
           const data = json || {};
@@ -233,7 +246,7 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('assistrio-deleted-notes-v2');
       localStorage.removeItem('assistrio-activities-v2');
       localStorage.removeItem('assistrio-onboarding-v2');
-    } catch(e) {}
+    } catch (e) { }
   }, []);
 
   const updateProfile = useCallback(async (updates) => {
@@ -258,7 +271,8 @@ export function AuthProvider({ children }) {
       signup,
       googleLogin,
       logout,
-      updateProfile
+      updateProfile,
+      patchSession
     }}>
       {children}
     </AuthContext.Provider>
