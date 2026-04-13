@@ -13,6 +13,20 @@ function normalizeAccountType(v) {
   return s === 'team' ? 'team' : 'personal';
 }
 
+function signToken(user) {
+  return jwt.sign(
+    {
+      id: user._id,
+      username: user.username,
+      role: user.role,
+      accountType: user.accountType,
+      ownedTeamId: user.ownedTeamId || null,
+      memberTeamId: user.memberTeamId || null
+    },
+    process.env.JWT_SECRET || 'your_jwt_secret'
+  );
+}
+
 exports.signup = async (req, res) => {
   try {
     const { username, password, displayName, accountType, teamName } = req.body;
@@ -49,10 +63,7 @@ exports.signup = async (req, res) => {
       createdTeamId = team._id;
     }
 
-    const token = jwt.sign(
-      { id: user._id, username: user.username, role: user.role, accountType: user.accountType, ownedTeamId: createdTeamId, memberTeamId: user.memberTeamId || null },
-      process.env.JWT_SECRET || 'your_jwt_secret'
-    );
+    const token = signToken(user);
 
     res.status(201).json({
       success: true,
@@ -83,10 +94,7 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid credentials' });
 
-    const token = jwt.sign(
-      { id: user._id, username: user.username, role: user.role, accountType: user.accountType, ownedTeamId: user.ownedTeamId || null, memberTeamId: user.memberTeamId || null },
-      process.env.JWT_SECRET || 'your_jwt_secret'
-    );
+    const token = signToken(user);
 
     res.json({
       success: true,
@@ -134,10 +142,7 @@ exports.googleLogin = async (req, res) => {
       await user.save();
     }
 
-    const token = jwt.sign(
-      { id: user._id, username: user.username, role: user.role, accountType: user.accountType, ownedTeamId: user.ownedTeamId || null, memberTeamId: user.memberTeamId || null },
-      process.env.JWT_SECRET || 'your_jwt_secret'
-    );
+    const token = signToken(user);
 
     res.json({
       success: true,
@@ -147,6 +152,62 @@ exports.googleLogin = async (req, res) => {
         username: user.username,
         displayName: user.displayName,
         email: user.email,
+        profilePhoto: user.profilePhoto,
+        plan: user.plan,
+        role: user.role,
+        accountType: user.accountType,
+        ownedTeamId: user.ownedTeamId || null,
+        memberTeamId: user.memberTeamId || null
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.convertToTeam = async (req, res) => {
+  try {
+    const teamName = normalizeString(req.body?.teamName);
+    if (!teamName) return res.status(400).json({ error: 'Please enter a team name' });
+
+    const user = await User.findById(req.user?.id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.accountType === 'team' && user.ownedTeamId) {
+      return res.status(400).json({ error: 'Account is already a team account' });
+    }
+
+    const oldTeamId = user.memberTeamId ? String(user.memberTeamId) : null;
+
+    const team = new Team({
+      name: teamName,
+      ownerId: user._id,
+      members: [{ userId: user._id, role: 'owner' }]
+    });
+    await team.save();
+
+    if (oldTeamId && String(team._id) !== oldTeamId) {
+      try {
+        await Team.updateOne({ _id: oldTeamId }, { $pull: { members: { userId: user._id } } });
+      } catch (e) {
+      }
+    }
+
+    user.accountType = 'team';
+    user.ownedTeamId = team._id;
+    user.memberTeamId = team._id;
+    await user.save();
+
+    const token = signToken(user);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        username: user.username,
+        displayName: user.displayName,
+        email: user.email,
+        mobile: user.mobile,
         profilePhoto: user.profilePhoto,
         plan: user.plan,
         role: user.role,

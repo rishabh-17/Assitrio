@@ -22,10 +22,10 @@ const dk = {
   settingSubtitle: { fontSize: 11, color: '#4b5563' },
   logoutBtn: { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '14px', backgroundColor: '#1a1a1a', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, color: '#f87171', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginBottom: 20 },
   overlay: { position: 'fixed', inset: 0, backgroundColor: '#111111', zIndex: 120, display: 'flex', flexDirection: 'column' },
-  overlayHeader: { backgroundColor: '#161616', paddingTop: 'calc(40px + env(safe-area-inset-top, 0px))', paddingLeft: 20, paddingRight: 20, paddingBottom: 14, borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10 },
+  overlayHeader: { backgroundColor: '#161616', paddingTop: 'max(40px, env(safe-area-inset-top, 40px))', paddingLeft: 20, paddingRight: 20, paddingBottom: 14, borderBottom: '1px solid #1f1f1f', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10 },
   overlayBack: { display: 'flex', alignItems: 'center', gap: 4, color: '#6b7280', fontWeight: 700, fontSize: 13, background: 'none', border: 'none', cursor: 'pointer' },
   overlaySave: { display: 'flex', alignItems: 'center', gap: 4, background: 'linear-gradient(135deg, #6d5bfa, #9b5de5)', color: '#fff', fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 10, border: 'none', cursor: 'pointer' },
-  overlayBody: { flex: 1, overflowY: 'auto', paddingLeft: 20, paddingRight: 20, paddingBottom: 'max(40px, env(safe-area-inset-bottom, 40px))', paddingTop: 'calc(78px + env(safe-area-inset-top, 0px))' },
+  overlayBody: { flex: 1, overflowY: 'auto', paddingLeft: 20, paddingRight: 20, paddingBottom: 'max(40px, env(safe-area-inset-bottom, 40px))', paddingTop: 'calc(64px + max(40px, env(safe-area-inset-top, 40px)))' },
   inputLabel: { fontSize: 9, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.12em', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 },
   input: { width: '100%', height: 46, backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, padding: '0 14px', fontSize: 14, color: '#f3f4f6', fontWeight: 500, outline: 'none', boxSizing: 'border-box', marginBottom: 18 },
   toggle: (on) => ({ width: 44, height: 24, borderRadius: 99, position: 'relative', backgroundColor: on ? '#6d5bfa' : '#2a2a2a', border: 'none', cursor: 'pointer', flexShrink: 0, transition: 'background-color 0.2s' }),
@@ -63,6 +63,7 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showSubscription, setShowSubscription] = useState(false);
   const [showTeam, setShowTeam] = useState(false);
+  const [showConvertTeam, setShowConvertTeam] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [showFAQ, setShowFAQ] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -87,6 +88,9 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
   const [inviteIdentifier, setInviteIdentifier] = useState('');
   const [teamError, setTeamError] = useState('');
   const [teamBusy, setTeamBusy] = useState(false);
+  const [convertTeamName, setConvertTeamName] = useState('');
+  const [convertBusy, setConvertBusy] = useState(false);
+  const [convertError, setConvertError] = useState('');
 
   const openEditProfile = () => { setEditName(user?.displayName || ''); setEditEmail(user?.email || ''); setEditMobile(user?.mobile || ''); setEditPhoto(user?.profilePhoto || ''); setShowEditProfile(true); };
   const handlePhotoUpload = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = (ev) => setEditPhoto(ev.target.result); r.readAsDataURL(f); };
@@ -94,6 +98,36 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
 
   const initials = (user?.displayName || user?.username || 'U').charAt(0).toUpperCase();
   const isComplete = user?.email && user?.mobile && user?.displayName;
+  const canConvertToTeam = !!(user?.accountType !== 'team');
+
+  const openConvertToTeam = () => {
+    setConvertTeamName('');
+    setConvertError('');
+    setShowConvertTeam(true);
+  };
+
+  const convertToTeam = async () => {
+    if (!convertTeamName.trim()) { setConvertError('Please enter a team name'); return; }
+    setConvertBusy(true);
+    setConvertError('');
+    try {
+      const r = await userService.convertToTeam(convertTeamName.trim());
+      if (r?.success && r?.user && r?.token) {
+        patchSession({ ...r.user, token: r.token });
+        setShowConvertTeam(false);
+        setShowTeam(true);
+        setTeamBusy(true);
+        await refreshTeamData();
+      } else {
+        setConvertError(r?.error || 'Failed to convert account');
+      }
+    } catch (e) {
+      setConvertError(typeof e?.response?.data?.error === 'string' ? e.response.data.error : (typeof e?.message === 'string' ? e.message : 'Failed to convert account'));
+    } finally {
+      setConvertBusy(false);
+      setTeamBusy(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -249,6 +283,21 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
       </div>
 
       {/* Team */}
+      {canConvertToTeam && (
+        <>
+          <p style={dk.sectionLabel}>Team Account</p>
+          <div style={{ marginBottom: 20 }}>
+            <SettingItem
+              icon={Users}
+              iconBg="rgba(109,91,250,0.1)"
+              iconColor="#a78bfa"
+              title="Convert to Team Account"
+              subtitle="Create your own team (irreversible)"
+              onClick={openConvertToTeam}
+            />
+          </div>
+        </>
+      )}
       {teamSectionVisible && (
         <>
           <p style={dk.sectionLabel}>Team</p>
@@ -465,6 +514,32 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
                 <p style={{ fontSize: 12, color: '#4b5563', margin: 0 }}>Ask a team owner to invite you by username or email.</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Convert to Team Overlay */}
+      {showConvertTeam && (
+        <div style={dk.overlay}>
+          <div style={dk.overlayHeader}>
+            <button style={dk.overlayBack} onClick={() => setShowConvertTeam(false)} disabled={convertBusy}><ChevronLeft size={19} /> Back</button>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#f9fafb' }}>Convert</span>
+            <button style={dk.overlaySave} onClick={convertToTeam} disabled={convertBusy}><Check size={15} /> Convert</button>
+          </div>
+          <div style={dk.overlayBody}>
+            <div style={{ backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, padding: 14, color: '#fca5a5', fontSize: 12, fontWeight: 700, marginBottom: 16, lineHeight: 1.5 }}>
+              This is irreversible. Your account will become a Team account and cannot be converted back to Individual.
+            </div>
+            <label style={dk.inputLabel}><Users size={11} />Team Name</label>
+            <input value={convertTeamName} onChange={(e) => { setConvertTeamName(e.target.value); setConvertError(''); }} placeholder="e.g. My Startup Team" style={dk.input} />
+            {convertError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, color: '#f87171', backgroundColor: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />{convertError}
+              </div>
+            )}
+            <button onClick={convertToTeam} disabled={convertBusy || !convertTeamName.trim()} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: convertTeamName.trim() ? 'pointer' : 'default', backgroundColor: convertBusy ? '#222' : 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: convertBusy ? '#4b5563' : '#fff', fontSize: 11, fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              {convertBusy ? 'Converting…' : 'Convert to Team Account'}
+            </button>
           </div>
         </div>
       )}

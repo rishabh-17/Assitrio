@@ -66,6 +66,7 @@ export const userService = {
     getUsage: async () => api.get('/users/usage'),
     updateUsage: async (usage) => api.put('/users/usage', usage),
     updateProfile: async (updates) => api.put('/users/profile', updates),
+    convertToTeam: async (teamName) => api.post('/auth/convert-to-team', { teamName }),
     getCalendarTokens: async () => api.get('/users/calendar-tokens'),
     updateCalendarToken: async (provider, tokenData) => api.put('/users/calendar-token', { provider, tokenData }),
     exportData: async () => api.get('/users/export'),
