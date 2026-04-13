@@ -13,7 +13,11 @@ import { aiService } from '../../services/apiService';
 
 const MAX_TRANSCRIPT_FOR_AI = 14000;
 
-const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze the provided transcript and generate a production-ready structured output in EXACTLY this JSON format (respond ONLY with the JSON block):
+const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze the provided transcript and generate a production-ready structured output in EXACTLY this JSON format (respond ONLY with the JSON block).
+
+Timezone: Asia/Kolkata (IST)
+Today's date in IST: TODAY_IST
+Current time in IST: NOW_TIME_IST
 
 {
   "summary_short": "2-3 line concise summary",
@@ -21,7 +25,7 @@ const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze
   "assigneeUserId": "<TEAM_MEMBER_ID or null>",
   "mom": {
     "title": "Professional descriptive title",
-    "date": "Current date or date mentioned",
+    "date": "YYYY-MM-DD (IST) - if not mentioned, use TODAY_IST",
     "participants": ["List of identified participants"],
     "agenda": ["Purpose of meeting"],
     "discussion": ["Key points discussed"],
@@ -31,7 +35,7 @@ const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze
   "tasks": [
     {
       "text": "Specific task description",
-      "date": "Due date if mentioned, else null",
+      "date": "YYYY-MM-DD (IST) if due date implied/mentioned, else null. If only a time is mentioned (e.g. '5 PM') with no date, use TODAY_IST.",
       "priority": "Critical | Important | Normal",
       "assignee": "Name or email if identified, else null",
       "assigneeUserId": "<TEAM_MEMBER_ID or null>"
@@ -70,6 +74,18 @@ function buildTeamDirectory(teamMembers = []) {
     const email = m?.email || '';
     return `- id: ${id} | name: ${name} | username: ${username} | email: ${email}`;
   }).join('\n');
+}
+
+function getIstNow() {
+  const tz = 'Asia/Kolkata';
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const y = parts.find((p) => p.type === 'year')?.value || '';
+  const m = parts.find((p) => p.type === 'month')?.value || '';
+  const d = parts.find((p) => p.type === 'day')?.value || '';
+  const today = (y && m && d) ? `${y}-${m}-${d}` : now.toISOString().slice(0, 10);
+  const time = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: tz });
+  return { today, time };
 }
 
 const TASK_EXTRACT_INSTRUCTIONS = `The user just asked to create a task. Based on the recent conversation context, extract the single task Speaker 1 (User) is referring to. Respond ONLY with JSON:
@@ -252,7 +268,12 @@ export default function TalkSimulator({ onClose, notes = [], teamMembers = [], c
     if (updateNote) {
       const forAi = transcript.length > MAX_TRANSCRIPT_FOR_AI ? transcript.slice(0, MAX_TRANSCRIPT_FOR_AI) : transcript;
       try {
-        const prompt = MOM_JSON_INSTRUCTIONS.replace('TEAM_MEMBERS_BLOCK', buildTeamDirectory(teamMembers)) + forAi;
+        const ist = getIstNow();
+        const prompt = MOM_JSON_INSTRUCTIONS
+          .replace('TODAY_IST', ist.today)
+          .replace('NOW_TIME_IST', ist.time)
+          .replace('TEAM_MEMBERS_BLOCK', buildTeamDirectory(teamMembers))
+          + forAi;
         const aiResult = await getAIResponse(prompt, [], true);
         const jsonMatch = aiResult.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
