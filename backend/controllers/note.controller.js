@@ -214,6 +214,7 @@ exports.createNote = async (req, res) => {
       userId: req.user.id,
       createdByUserId: req.user.id,
       teamId: isTeamAccount ? teamId : undefined,
+      assigneeUserId: body.assigneeUserId || null,
       id: req.body.id || Date.now()
     });
     await note.save();
@@ -244,6 +245,22 @@ exports.updateNote = async (req, res) => {
 
     const payload = req.body || {};
     const updates = { ...payload };
+
+    if (updates.assigneeUserId && before.teamId) {
+      const team = await Team.findById(before.teamId).select('ownerId members.userId');
+      if (!team) {
+        return res.status(404).json({ error: 'Team not found' });
+      }
+      const teamMemberIdSet = new Set();
+      teamMemberIdSet.add(String(team.ownerId));
+      for (const m of (team.members || [])) {
+        if (m?.userId) teamMemberIdSet.add(String(m.userId));
+      }
+      if (!teamMemberIdSet.has(String(updates.assigneeUserId))) {
+        return res.status(400).json({ error: 'Assignee must be a team member' });
+      }
+    }
+
     if (Array.isArray(payload.tasks)) {
       updates.tasks = await sanitizeAndValidateTasks(req, before, payload.tasks);
     }

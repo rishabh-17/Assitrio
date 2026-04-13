@@ -427,8 +427,8 @@ function AuthenticatedApp({ currentUser, logout }) {
                   currentUserId={String(currentUser?.id || '')}
                   currentUserEmail={String(currentUser?.email || '')}
                   currentUserUsername={String(currentUser?.username || '')}
-                  pendingTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: n.teamId ? 'team' : 'personal' })))}
-                  completedTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: n.teamId ? 'team' : 'personal' })))}
+                  pendingTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: teamEnabled && teamNotes?.some(tn => tn.id === n.id) ? 'team' : 'personal' })))}
+                  completedTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: teamEnabled && teamNotes?.some(tn => tn.id === n.id) ? 'team' : 'personal' })))}
                   toggleTask={(noteId, taskId) => toggleTask(noteId, taskId, teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal')}
                   openNote={(id, tab = 'summary', scope = null) => {
                     const resolvedScope = scope || (teamEnabled && teamNotes?.some(n => n.id === id) ? 'team' : 'personal');

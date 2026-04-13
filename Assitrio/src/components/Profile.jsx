@@ -97,15 +97,23 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
 
   useEffect(() => {
     let cancelled = false;
-    teamService.getInvitations().then((inv) => {
+    Promise.allSettled([teamService.getInvitations(), teamService.getMy()]).then((results) => {
       if (cancelled) return;
+      const inv = results[0]?.status === 'fulfilled' ? results[0].value : null;
+      const t = results[1]?.status === 'fulfilled' ? results[1].value : null;
+
       const count = Array.isArray(inv?.invitations) ? inv.invitations.length : 0;
       setTeamInviteCount(count);
+      if (t?.team) {
+        setTeam(t.team);
+        const teamId = t.team?.id || t.team?._id || null;
+        if (teamId && !user?.memberTeamId) patchSession({ memberTeamId: teamId });
+      }
     }).catch(() => {
       if (!cancelled) setTeamInviteCount(0);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [patchSession, user?.memberTeamId]);
 
   const refreshTeamData = async () => {
     try {
@@ -175,6 +183,9 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
     }
   };
 
+  const teamSectionVisible = !!(team || user?.accountType === 'team' || user?.memberTeamId || user?.ownedTeamId || teamInviteCount > 0);
+  const isTeamOwner = !!(team?.ownerId && user?.id && String(team.ownerId) === String(user.id));
+
   return (
     <div style={dk.root}>
       <h1 style={dk.title}>Profile</h1>
@@ -238,7 +249,7 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
       </div>
 
       {/* Team */}
-      {(user?.accountType === 'team' || teamInviteCount > 0) && (
+      {teamSectionVisible && (
         <>
           <p style={dk.sectionLabel}>Team</p>
           <div style={{ marginBottom: 20 }}>
@@ -246,13 +257,31 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
               icon={Users}
               iconBg="rgba(96,165,250,0.1)"
               iconColor="#60a5fa"
-              title={user?.accountType === 'team' ? 'Team Account' : 'Team Invitations'}
-              subtitle={user?.accountType === 'team'
-                ? 'Manage your team members'
-                : `${teamInviteCount} pending invite(s)`}
+              title={team ? team.name : (teamInviteCount > 0 ? 'Team Invitations' : 'Team')}
+              subtitle={team
+                ? `${team.members?.length || 0} members`
+                : (teamInviteCount > 0 ? `${teamInviteCount} pending invite(s)` : 'Open team')}
               onClick={openTeam}
             />
           </div>
+          {team && (
+            <div style={{ backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: 14, marginBottom: 20 }}>
+              <p style={{ fontSize: 12, fontWeight: 900, color: '#f9fafb', margin: '0 0 10px' }}>{team.name}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(team.members || []).slice(0, 6).map((m) => (
+                  <div key={String(m.userId)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: 12, fontWeight: 800, color: '#d1d5db', margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.displayName || m.username}</p>
+                      <p style={{ fontSize: 10, color: '#4b5563', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.email || `@${m.username}`}</p>
+                    </div>
+                    <span style={{ fontSize: 9, fontWeight: 800, color: m.teamRole === 'owner' ? '#34d399' : '#a78bfa', backgroundColor: m.teamRole === 'owner' ? 'rgba(52,211,153,0.08)' : 'rgba(167,139,250,0.08)', border: `1px solid ${m.teamRole === 'owner' ? 'rgba(52,211,153,0.18)' : 'rgba(167,139,250,0.18)'}`, borderRadius: 99, padding: '3px 9px', textTransform: 'uppercase', letterSpacing: '0.08em', flexShrink: 0 }}>
+                      {m.teamRole}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -393,22 +422,24 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
               </div>
             )}
 
-            {user?.accountType === 'team' && team && (
+            {team && (
               <>
                 <div style={{ backgroundColor: '#1a1a1a', borderRadius: 18, border: '1px solid #222', padding: 16, marginBottom: 20 }}>
                   <p style={{ fontSize: 16, fontWeight: 900, color: '#f9fafb', margin: '0 0 6px' }}>{team.name}</p>
                   <p style={{ fontSize: 11, color: '#4b5563', margin: 0 }}>{team.members?.length || 0} members</p>
                 </div>
 
-                <div style={{ backgroundColor: '#1a1a1a', borderRadius: 18, border: '1px solid #222', padding: 16, marginBottom: 20 }}>
-                  <p style={{ fontSize: 14, fontWeight: 800, color: '#f9fafb', margin: '0 0 10px' }}>Invite member</p>
-                  <label style={dk.inputLabel}><Mail size={11} />Username or Email</label>
-                  <input value={inviteIdentifier} onChange={(e) => setInviteIdentifier(e.target.value)} placeholder="e.g. User1 or user@email.com" style={dk.input} />
-                  <button onClick={sendInvite} disabled={teamBusy || !inviteIdentifier.trim()} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: inviteIdentifier.trim() ? 'pointer' : 'default', backgroundColor: inviteIdentifier.trim() ? '#6d5bfa' : '#222', color: inviteIdentifier.trim() ? '#fff' : '#4b5563', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                    Send Invite
-                  </button>
-                  <p style={{ fontSize: 11, color: '#4b5563', margin: '10px 0 0' }}>Invite works only for existing users.</p>
-                </div>
+                {user?.accountType === 'team' && isTeamOwner && (
+                  <div style={{ backgroundColor: '#1a1a1a', borderRadius: 18, border: '1px solid #222', padding: 16, marginBottom: 20 }}>
+                    <p style={{ fontSize: 14, fontWeight: 800, color: '#f9fafb', margin: '0 0 10px' }}>Invite member</p>
+                    <label style={dk.inputLabel}><Mail size={11} />Username or Email</label>
+                    <input value={inviteIdentifier} onChange={(e) => setInviteIdentifier(e.target.value)} placeholder="e.g. User1 or user@email.com" style={dk.input} />
+                    <button onClick={sendInvite} disabled={teamBusy || !inviteIdentifier.trim()} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: inviteIdentifier.trim() ? 'pointer' : 'default', backgroundColor: inviteIdentifier.trim() ? '#6d5bfa' : '#222', color: inviteIdentifier.trim() ? '#fff' : '#4b5563', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                      Send Invite
+                    </button>
+                    <p style={{ fontSize: 11, color: '#4b5563', margin: '10px 0 0' }}>Invite works only for existing users.</p>
+                  </div>
+                )}
 
                 <div>
                   <p style={dk.sectionLabel}>Members</p>

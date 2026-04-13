@@ -165,7 +165,7 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
         </div>
 
         {/* Title */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
           {editingField === 'title' ? (
             <div style={{ flex: 1 }}>
               <input ref={editInputRef} value={editValue} onChange={e => setEditValue(e.target.value)} style={{ ...inputStyle, fontSize: 20, fontWeight: 800, marginBottom: 10 }} />
@@ -181,6 +181,28 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
             </>
           )}
         </div>
+
+        {/* Note Assignee */}
+        {Array.isArray(teamMembers) && teamMembers.length > 0 && (
+          <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: '#6b7280' }}>Assign Note To:</span>
+            <select
+              value={note.assigneeUserId ? String(note.assigneeUserId) : ''}
+              onChange={(e) => {
+                const assigneeUserId = e.target.value || null;
+                updateNote(note.id, { assigneeUserId });
+              }}
+              style={{ flex: 1, padding: '8px 12px', backgroundColor: '#161616', border: '1px solid #2a2a2a', borderRadius: 10, color: '#9ca3af', fontSize: 12, fontWeight: 700, outline: 'none', appearance: 'none' }}
+            >
+              <option value="">Unassigned</option>
+              {teamMembers.map((m) => (
+                <option key={String(m.userId)} value={String(m.userId)}>
+                  {(m.displayName || m.username || m.email || 'Member')}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Tabs */}
         <div style={{ display: 'flex', borderBottom: '1px solid #1f1f1f', marginBottom: 20 }}>
@@ -276,7 +298,7 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
                         {task.priority && task.priority !== 'Normal' && <span style={dk.taskChip(task.priority === 'Critical' ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)', task.priority === 'Critical' ? '#f87171' : '#fbbf24', task.priority === 'Critical' ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)')}>{task.priority}</span>}
                         {task.assignee && <span style={dk.taskChip('rgba(167,139,250,0.1)', '#a78bfa', 'rgba(167,139,250,0.2)')}>@{task.assignee.split('@')[0]}</span>}
                       </div>
-                      {note.teamId && Array.isArray(teamMembers) && teamMembers.length > 0 && (
+                      {Array.isArray(teamMembers) && teamMembers.length > 0 && (
                         <div style={{ marginTop: 10 }}>
                           <select
                             value={task.assigneeUserId ? String(task.assigneeUserId) : ''}

@@ -25,6 +25,7 @@ const noteSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team' },
   createdByUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  assigneeUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   id: { type: Number, required: true }, // Logic ID for frontend sync
   title: { type: String, required: true },
   date: { type: String },

@@ -12,6 +12,7 @@ const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze
 {
   "summary_short": "2-3 line concise summary",
   "summary_detailed": "Comprehensive paragraph summary",
+  "assigneeUserId": "<TEAM_MEMBER_ID or null>",
   "mom": {
     "title": "Professional descriptive title",
     "date": "Current date or date mentioned",
@@ -46,7 +47,7 @@ IMPORTANT RULES:
 - Metadata accuracy is critical for enterprise reporting.
 - If the text explicitly asks to 'create a task' but no specifics are given, output a task with text 'Pending requirement manually requested'.
 - Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
-- If the transcript assigns a task to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
+- If the transcript assigns a task OR the entire note to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
 
 TEAM_MEMBERS:
 TEAM_MEMBERS_BLOCK
@@ -134,7 +135,7 @@ export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appe
             assigneeUserId: t.assigneeUserId || null,
             createdByUserId: currentUserId || null
           }));
-          updateNote(newId, { title: p.mom?.title || 'Recorded Meeting', summaryShort: p.summary_short, summaryDetailed: p.summary_detailed, summary: p.summary_short || p.summary_detailed, detailedMom: p.mom, mom: p.mom?.discussion?.join('\n') || 'No clear discussion points.', tasks: formattedTasks, keywords: p.keywords, sentiment: p.sentiment, diarization: p.diarization, callStatus: p.call_status || 'completed' });
+          updateNote(newId, { title: p.mom?.title || 'Recorded Meeting', summaryShort: p.summary_short, summaryDetailed: p.summary_detailed, summary: p.summary_short || p.summary_detailed, detailedMom: p.mom, mom: p.mom?.discussion?.join('\n') || 'No clear discussion points.', tasks: formattedTasks, keywords: p.keywords, sentiment: p.sentiment, diarization: p.diarization, callStatus: p.call_status || 'completed', assigneeUserId: p.assigneeUserId || null });
           if (typeof scheduleFromNote === 'function' && p.mom?.title) scheduleFromNote(newId);
         }
       } catch (e) { console.error('Listen extraction failed:', e); updateNote(newId, { summary: 'Analysis failed.', callStatus: 'dropped' }); }

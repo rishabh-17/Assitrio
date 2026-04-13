@@ -18,6 +18,7 @@ const MOM_JSON_INSTRUCTIONS = `You are an advanced AI Meeting Assistant. Analyze
 {
   "summary_short": "2-3 line concise summary",
   "summary_detailed": "Comprehensive paragraph summary",
+  "assigneeUserId": "<TEAM_MEMBER_ID or null>",
   "mom": {
     "title": "Professional descriptive title",
     "date": "Current date or date mentioned",
@@ -51,7 +52,7 @@ IMPORTANT RULES:
 - If no tasks found, set 'tasks' to [].
 - Sentiment should reflect the overall tone.
 - Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
-- If the transcript assigns a task to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
+- If the transcript assigns a task OR the entire note to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
 
 TEAM_MEMBERS:
 TEAM_MEMBERS_BLOCK

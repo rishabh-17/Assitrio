@@ -98,11 +98,11 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
             {scope === 'team' && teamMembers.length > 0 && (
               <div style={{ marginTop: 10 }}>
                 <div style={{ position: 'relative' }}>
-                  <Users size={13} style={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', color: '#374151' }} />
+                  <Users size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#374151' }} />
                   <select
                     value={editAssigneeUserId}
                     onChange={(e) => setEditAssigneeUserId(e.target.value)}
-                    style={{ width: '100%', marginLeft: 18, padding: '8px 10px', backgroundColor: '#161616', border: '1px solid #2a2a2a', borderRadius: 10, color: '#9ca3af', fontSize: 12, fontWeight: 700, outline: 'none', appearance: 'none' }}
+                    style={{ width: '100%', padding: '8px 10px 8px 28px', backgroundColor: '#161616', border: '1px solid #2a2a2a', borderRadius: 10, color: '#9ca3af', fontSize: 12, fontWeight: 700, outline: 'none', appearance: 'none' }}
                   >
                     <option value="">Unassigned</option>
                     {teamMembers.map((m) => (
@@ -246,16 +246,31 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
     const pn = noteIndex.get(t.noteId);
     const noteDate = pn?.date || 'Today';
     const noteTitle = pn?.title || t.noteTitle;
-    const scope = pn?.teamId ? 'team' : (t.scope || 'personal');
+    const scope = (teamEnabled && teamNotes?.some(tn => tn.id === t.noteId)) ? 'team' : (t.scope || 'personal');
     return { ...t, noteDate, noteTitle, scope };
   });
 
   const uniqueAssignees = [...new Set([...pendingTasks, ...completedTasks].map(t => t.assignee).filter(Boolean))].sort();
   const allNotesCount = (notes?.length || 0) + (teamEnabled ? (teamNotes?.length || 0) : 0);
   const activeNotes = (teamEnabled && notesScope === 'team') ? teamNotes : notes;
-  const filteredNotes = getFilteredItems(activeNotes);
+  let filteredNotes = getFilteredItems(activeNotes);
   let filteredPending = getFilteredItems(prepTasks(pendingTasks));
   let filteredCompleted = getFilteredItems(prepTasks(completedTasks));
+
+  const uid = String(currentUserId || '');
+  const userEmail = String(currentUserEmail || '').toLowerCase();
+  const userUsername = String(currentUserUsername || '').toLowerCase();
+
+  if (view === 'notes' && teamEnabled && notesScope === 'team') {
+    if (taskOwnershipFilter === 'assigned_to_me') {
+      filteredNotes = filteredNotes.filter(n => {
+        if (uid && String(n.assigneeUserId || '') === uid) return true;
+        return false;
+      });
+    } else if (taskOwnershipFilter === 'assigned_by_me') {
+      filteredNotes = filteredNotes.filter(n => uid && String(n.createdByUserId || '') === uid);
+    }
+  }
 
   if (view === 'tasks') {
     const applyScope = (arr) => {
@@ -266,9 +281,6 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
     filteredPending = applyScope(filteredPending);
     filteredCompleted = applyScope(filteredCompleted);
 
-    const uid = String(currentUserId || '');
-    const userEmail = String(currentUserEmail || '').toLowerCase();
-    const userUsername = String(currentUserUsername || '').toLowerCase();
     const applyOwnershipFilter = (arr) => {
       if (taskOwnershipFilter === 'assigned_to_me') {
         return arr.filter((t) => {
@@ -344,7 +356,7 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
             <ChevronDown size={16} style={dk.dropdownIconAbs} />
           </div>
         )}
-        {view === 'tasks' && (
+        {(view === 'tasks' || (view === 'notes' && notesScope === 'team' && teamEnabled)) && (
           <div style={dk.filterWrap}>
             <Mail size={15} style={dk.filterIconAbs} />
             <select style={dk.filterSelect} value={taskOwnershipFilter} onChange={(e) => setTaskOwnershipFilter(e.target.value)}>
@@ -405,6 +417,17 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
                   <span>•</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{note.time}</span>
                   <span>•</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{note.source === 'talk' ? <MessageCircle size={9} /> : <Mic size={9} />}{note.source === 'talk' ? 'Talk' : 'Listen'}</span>
                   <span>•</span><span>{note.tasks.filter(t => !t.done).length} pending</span>
+                  {note.assigneeUserId && teamMembers.length > 0 && (() => {
+                    const am = teamMembers.find(m => String(m.userId) === String(note.assigneeUserId));
+                    return am ? (
+                      <>
+                        <span>•</span>
+                        <span style={dk.chip('rgba(167,139,250,0.1)', '#a78bfa', 'rgba(167,139,250,0.2)')}>
+                          <Mail size={8} />{(am.displayName || am.username || am.email || 'Member').split('@')[0]}
+                        </span>
+                      </>
+                    ) : null;
+                  })()}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
