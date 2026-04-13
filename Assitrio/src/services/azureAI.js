@@ -100,6 +100,7 @@ ${noteSummaries || 'No prior conversation history recorded.'}${ragContext}
 5. If you lack information, state it clearly. Do not hallucinate.
 6. Prioritize pending tasks and deadlines in conversation when relevant.
 7. Translate any Hindi, Hinglish, or mixed language into standard, professional business English.`;
+
 }
 
 async function buildContextForQuery(query, notes = [], topK = 5) {

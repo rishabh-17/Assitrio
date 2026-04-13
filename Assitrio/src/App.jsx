@@ -45,9 +45,9 @@ export default function App() {
 function AppContent() {
   const { isAuthenticated, currentUser, login, signup, googleLogin, logout } = useAuth();
 
-  const handleAuth = (mode, username, password, displayName, accountType, teamName, loginKind) => {
+  const handleAuth = (mode, username, password, displayName, accountType, teamName) => {
     if (mode === 'login') {
-      return login(username, password, loginKind);
+      return login(username, password);
     } else {
       return signup(username, password, displayName, accountType, teamName);
     }

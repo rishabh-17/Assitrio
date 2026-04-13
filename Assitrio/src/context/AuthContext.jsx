@@ -97,7 +97,7 @@ export function AuthProvider({ children }) {
     saveSession(next);
   }, [currentUser]);
 
-  const login = useCallback(async (username, password, loginKind = 'personal') => {
+  const login = useCallback(async (username, password) => {
     try {
       const bases = [getApiBaseUrl(), ...getApiBaseUrlCandidates()].filter(Boolean);
       const uniqueBases = [...new Set(bases)];
@@ -117,11 +117,6 @@ export function AuthProvider({ children }) {
           authLog('login:result', { base, status: res.status, ok: res.ok, success: !!data.success, error: data.error || null });
           if (res.ok && data.success) {
             const userObj = data.user || {};
-            const accountType = userObj.accountType || 'personal';
-            if (loginKind === 'team' && accountType !== 'team') {
-              lastError = 'This is not a team account. Please use Personal login.';
-              continue;
-            }
             setApiBaseUrl(base);
             const session = { ...userObj, token: data.token };
             saveSession(session);

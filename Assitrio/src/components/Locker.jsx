@@ -246,11 +246,12 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
     const pn = noteIndex.get(t.noteId);
     const noteDate = pn?.date || 'Today';
     const noteTitle = pn?.title || t.noteTitle;
-    const scope = (teamEnabled && teamNotes?.some(tn => tn.id === t.noteId)) ? 'team' : (t.scope || 'personal');
+    const isTeamNote = !!(teamEnabled && teamNotes?.some(tn => tn.id === t.noteId));
+    const isAssignedToTeamMember = !!(teamEnabled && t.assigneeUserId);
+    const scope = (isTeamNote || isAssignedToTeamMember) ? 'team' : (t.scope || 'personal');
     return { ...t, noteDate, noteTitle, scope };
   });
 
-  const uniqueAssignees = [...new Set([...pendingTasks, ...completedTasks].map(t => t.assignee).filter(Boolean))].sort();
   const allNotesCount = (notes?.length || 0) + (teamEnabled ? (teamNotes?.length || 0) : 0);
   const activeNotes = (teamEnabled && notesScope === 'team') ? teamNotes : notes;
   let filteredNotes = getFilteredItems(activeNotes);
@@ -303,9 +304,27 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
   }
 
   if (assigneeFilter !== 'all') {
-    const fn = t => assigneeFilter === 'unassigned' ? !t.assignee : t.assignee === assigneeFilter;
-    filteredPending = filteredPending.filter(fn);
-    filteredCompleted = filteredCompleted.filter(fn);
+    if (assigneeFilter === 'unassigned') {
+      const fn = (t) => !t.assigneeUserId && !t.assignee;
+      filteredPending = filteredPending.filter(fn);
+      filteredCompleted = filteredCompleted.filter(fn);
+    } else {
+      const selectedMember = (teamMembers || []).find((m) => String(m.userId) === String(assigneeFilter));
+      const selectedEmail = String(selectedMember?.email || '').toLowerCase();
+      const selectedUsername = String(selectedMember?.username || '').toLowerCase();
+      const selectedDisplayName = String(selectedMember?.displayName || '').toLowerCase();
+      const fn = (t) => {
+        if (String(t.assigneeUserId || '') === String(assigneeFilter)) return true;
+        const a = String(t.assignee || '').toLowerCase();
+        if (!a) return false;
+        if (selectedEmail && a === selectedEmail) return true;
+        if (selectedUsername && (a === selectedUsername || a.split('@')[0] === selectedUsername)) return true;
+        if (selectedDisplayName && a === selectedDisplayName) return true;
+        return false;
+      };
+      filteredPending = filteredPending.filter(fn);
+      filteredCompleted = filteredCompleted.filter(fn);
+    }
   }
 
   const noteTabs = [
@@ -390,13 +409,17 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
             </div>
           </>
         )}
-        {view === 'tasks' && uniqueAssignees.length > 0 && (
+        {view === 'tasks' && teamEnabled && (tasksScope === 'all' || tasksScope === 'team') && teamMembers.length > 0 && (
           <div style={dk.filterWrap}>
             <Users size={15} style={dk.filterIconAbs} />
             <select style={dk.filterSelect} value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)}>
               <option value="all">All Assignees</option>
               <option value="unassigned">Unassigned</option>
-              {uniqueAssignees.map(e => <option key={e} value={e}>{e.split('@')[0]}</option>)}
+              {teamMembers.map((m) => (
+                <option key={String(m.userId)} value={String(m.userId)}>
+                  {(m.displayName || m.username || m.email || 'Member').split('@')[0]}
+                </option>
+              ))}
             </select>
           </div>
         )}

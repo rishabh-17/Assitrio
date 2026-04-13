@@ -5,7 +5,6 @@ const GOOGLE_CLIENT_ID = '832218498414-your-client-id.apps.googleusercontent.com
 
 export default function LoginScreen({ onLogin, onGoogleLogin }) {
   const [mode, setMode] = useState('login');
-  const [loginKind, setLoginKind] = useState('personal');
   const [accountType, setAccountType] = useState('personal');
   const [teamName, setTeamName] = useState('');
   const [username, setUsername] = useState('');
@@ -50,7 +49,7 @@ export default function LoginScreen({ onLogin, onGoogleLogin }) {
     if (mode === 'signup' && accountType === 'team' && !teamName.trim()) { setError('Please enter a team name'); return; }
     setIsLoading(true);
     await new Promise(r => setTimeout(r, 600));
-    const result = await onLogin(mode, username.trim().toLowerCase(), password, displayName.trim(), accountType, teamName.trim(), loginKind);
+    const result = await onLogin(mode, username.trim().toLowerCase(), password, displayName.trim(), accountType, teamName.trim());
     if (!result.success) setError(result.error);
     setIsLoading(false);
   };
@@ -96,33 +95,6 @@ export default function LoginScreen({ onLogin, onGoogleLogin }) {
           <div style={{ backgroundColor: '#161616', borderRadius: 24, border: '1px solid #1f1f1f', padding: '28px 24px', flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f9fafb', margin: '0 0 6px' }}>{mode === 'login' ? 'Welcome back' : 'Create account'}</h2>
             <p style={{ fontSize: 13, color: '#4b5563', margin: '0 0 24px' }}>{mode === 'login' ? 'Sign in to access your memories' : 'Get started with Assistrio'}</p>
-
-            {mode === 'login' && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                {[{ id: 'personal', label: 'Individual' }, { id: 'team', label: 'Team' }].map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => { setLoginKind(t.id); setError(''); }}
-                    style={{
-                      flex: 1,
-                      height: 40,
-                      borderRadius: 12,
-                      border: '1px solid #2a2a2a',
-                      backgroundColor: loginKind === t.id ? 'rgba(109,91,250,0.15)' : '#1a1a1a',
-                      color: loginKind === t.id ? '#c4b5fd' : '#6b7280',
-                      fontSize: 12,
-                      fontWeight: 800,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {/* Google button */}
             <button type="button" onClick={handleGoogleClick} disabled={googleLoading} style={{ width: '100%', height: 46, borderRadius: 12, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 20, backgroundColor: '#1e1e1e', border: '1px solid #2a2a2a', color: '#d1d5db', cursor: 'pointer' }}>
