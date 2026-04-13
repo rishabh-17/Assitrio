@@ -80,7 +80,7 @@ export default function PaymentHistory({ onClose, isAdmin = false, isOverlay = t
                   <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr 1fr' : '1fr 1fr', gap: 12 }}>
                     <div>
                       <p style={dk.txLabel}>Date</p>
-                      <p style={{ ...dk.txVal, fontSize: 12 }}>{new Date(tx.createdAt).toLocaleDateString()}</p>
+                      <p style={{ ...dk.txVal, fontSize: 12 }}>{new Date(tx.createdAt).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
                     </div>
                     <div>
                       <p style={dk.txLabel}>Tier</p>

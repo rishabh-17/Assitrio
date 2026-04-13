@@ -5,6 +5,7 @@ const dotenv = require('dotenv');
 const morgan = require('morgan');
 
 dotenv.config();
+process.env.TZ = process.env.TZ || 'Asia/Kolkata';
 
 const authRoutes = require('./routes/auth.routes');
 const noteRoutes = require('./routes/note.routes');

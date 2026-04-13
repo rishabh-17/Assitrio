@@ -90,11 +90,13 @@ export function formatMeetingForDisplay(meeting) {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
+      timeZone: 'Asia/Kolkata',
     });
     const displayTime = start.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
+      timeZone: 'Asia/Kolkata',
     });
     return { displayDate, displayTime };
   } catch {

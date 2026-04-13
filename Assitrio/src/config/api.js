@@ -39,7 +39,7 @@ export function getApiBaseUrlCandidates() {
             return ['http://10.0.2.2:5050/api', 'http://4.186.31.52:5050/api'].map(normalizeApiBaseUrl).filter(Boolean);
         }
         if (host === 'localhost' || host === '127.0.0.1') {
-            return ['http://localhost:5050/api', 'http://4.186.31.52:5050/api'].map(normalizeApiBaseUrl).filter(Boolean);
+            return ['http://4.186.31.52:5050/api', 'http://localhost:5050/api'].map(normalizeApiBaseUrl).filter(Boolean);
         }
     }
 

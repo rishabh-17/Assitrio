@@ -40,7 +40,7 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
   const { currentUser } = useAuth();
   
   const greeting = useMemo(() => {
-    const hour = new Date().getHours();
+    const hour = Number(new Intl.DateTimeFormat('en-US', { hour: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
     if (hour < 12) return 'Good Morning,';
     if (hour < 17) return 'Good Afternoon,';
     return 'Good Evening,';
@@ -53,14 +53,14 @@ export default function Dashboard({ pendingTasks = [], notes = [], deletedNotes 
 
   const recentNotes = notes.slice(0, 3);
 
-  const today = useMemo(() => new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), []);
+  const today = useMemo(() => new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' }), []);
 
   const chartBars = useMemo(() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      days.push({ name: d.toLocaleDateString('en-US', { weekday: 'short' }), date: d.toDateString() });
+      days.push({ name: d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Kolkata' }), date: d.toDateString() });
     }
     const buckets = [0, 0, 0, 0, 0, 0, 0];
     [...notes, ...deletedNotes].forEach(n => {

@@ -60,16 +60,21 @@ function buildPromptWithDates(transcript, teamMembers = []) {
   const thisFriday = new Date(now);
   thisFriday.setDate(thisFriday.getDate() + ((5 + 7 - thisFriday.getDay()) % 7 || 7));
 
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const tz = 'Asia/Kolkata';
 
   const localIsoDate = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+      const y = parts.find((p) => p.type === 'year')?.value || '';
+      const m = parts.find((p) => p.type === 'month')?.value || '';
+      const day = parts.find((p) => p.type === 'day')?.value || '';
+      if (y && m && day) return `${y}-${m}-${day}`;
+    } catch {
+    }
+    return new Date(d).toISOString().slice(0, 10);
   };
 
-  const timeFmt = () => now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const timeFmt = () => now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz });
 
   const teamBlock = Array.isArray(teamMembers) && teamMembers.length > 0
     ? teamMembers.map((m) => {
@@ -168,22 +173,23 @@ function normalizeMeeting(m, teamMembers = []) {
     if (!date || typeof date !== 'string') return null;
     const startTime = m.startTime || '10:00';
     const endTimeParsed = m.endTime || addMinutes(startTime, 30);
-
-    const [y, mo, d] = date.split('-').map((x) => Number(x));
-    const [sh, sm] = String(startTime).split(':').map((x) => Number(x));
-    const [eh, em] = String(endTimeParsed).split(':').map((x) => Number(x));
-    if (![y, mo, d, sh, sm, eh, em].every((n) => Number.isFinite(n))) return null;
-
-    let startLocal = new Date(y, mo - 1, d, sh, sm, 0, 0);
-    let endLocal = new Date(y, mo - 1, d, eh, em, 0, 0);
+    const tzOffset = '+05:30';
+    let startLocal = new Date(`${date}T${String(startTime).padStart(5, '0')}:00${tzOffset}`);
+    let endLocal = new Date(`${date}T${String(endTimeParsed).padStart(5, '0')}:00${tzOffset}`);
     if (Number.isNaN(startLocal.getTime()) || Number.isNaN(endLocal.getTime())) return null;
     if (endLocal <= startLocal) endLocal = new Date(startLocal.getTime() + 30 * 60 * 1000);
 
+    const istYMD = (dt) => {
+      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(dt);
+      const y = parts.find((p) => p.type === 'year')?.value || '';
+      const m = parts.find((p) => p.type === 'month')?.value || '';
+      const d = parts.find((p) => p.type === 'day')?.value || '';
+      return y && m && d ? `${y}-${m}-${d}` : '';
+    };
+
     const now = new Date();
-    const isSameLocalDay = startLocal.getFullYear() === now.getFullYear() &&
-      startLocal.getMonth() === now.getMonth() &&
-      startLocal.getDate() === now.getDate();
-    if (isSameLocalDay && startLocal.getTime() < now.getTime() - 2 * 60 * 1000) {
+    const isSameIstDay = istYMD(startLocal) && istYMD(startLocal) === istYMD(now);
+    if (isSameIstDay && startLocal.getTime() < now.getTime() - 2 * 60 * 1000) {
       startLocal = new Date(startLocal.getTime() + 24 * 60 * 60 * 1000);
       endLocal = new Date(endLocal.getTime() + 24 * 60 * 60 * 1000);
     }

@@ -246,7 +246,7 @@ export default function TalkSimulator({ onClose, notes = [], teamMembers = [], c
     const newId = Date.now();
     const transcript = formatTalkTranscript(messagesRef.current);
     const audioUrl = await buildAudioUrl();
-    const draft = { id: newId, title: auto ? 'Note from Talk (Extracting...)' : 'Talk Session (Extracting...)', date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }), time: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }), duration: `${messagesRef.current.length} turns`, summary: 'Analyzing conversation...', mom: 'Structured minutes will appear here.', transcript, audioUrl: audioUrl || undefined, source: 'talk' };
+    const draft = { id: newId, title: auto ? 'Note from Talk (Extracting...)' : 'Talk Session (Extracting...)', date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }), time: new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }), duration: `${messagesRef.current.length} turns`, summary: 'Analyzing conversation...', mom: 'Structured minutes will appear here.', transcript, audioUrl: audioUrl || undefined, source: 'talk' };
     onSaveMOM(draft, null);
     savedNoteIdRef.current = newId;
     if (updateNote) {

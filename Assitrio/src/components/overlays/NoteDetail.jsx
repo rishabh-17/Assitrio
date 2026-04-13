@@ -47,6 +47,8 @@ const dk = {
 export default function NoteDetail({ note, initialTab = 'summary', onClose, toggleTask, deleteNote, updateNote, updateTask, deleteTask, addTask, teamMembers = [] }) {
   if (!note) return null;
 
+  const tasks = Array.isArray(note.tasks) ? note.tasks : [];
+
   const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [editingTaskId, setEditingTaskId] = useState(null);
@@ -69,8 +71,8 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
   useEffect(() => { if (showAddTask && newTaskRef.current) newTaskRef.current.focus(); }, [showAddTask]);
   useEffect(() => { return () => { stopSpeaking(); if (audioPlayerRef.current) audioPlayerRef.current.pause(); }; }, []);
 
-  const completedCount = note.tasks.filter(t => t.done).length;
-  const totalCount = note.tasks.length;
+  const completedCount = tasks.filter(t => t.done).length;
+  const totalCount = tasks.length;
   const progress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const togglePlayback = (e) => {
@@ -87,7 +89,7 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
     let text = `${note.title}\nDate: ${note.date} | Duration: ${note.duration} | Time: ${note.time}\n\n`;
     if (note.summaryDetailed || note.summaryShort || note.summary) text += `Executive Summary\n${note.summaryDetailed || note.summaryShort || note.summary}\n\n`;
     if (note.mom) text += `Minutes of Meeting\n${note.mom}\n\n`;
-    if (note.tasks?.length > 0) { text += `Tasks (${completedCount}/${totalCount})\n`; note.tasks.forEach(t => { text += `- ${t.done ? "[x]" : "[ ]"} ${t.text}${t.date ? " (Due: " + t.date + ")" : ""}\n`; }); text += "\n"; }
+    if (tasks.length > 0) { text += `Tasks (${completedCount}/${totalCount})\n`; tasks.forEach(t => { text += `- ${t.done ? "[x]" : "[ ]"} ${t.text}${t.date ? " (Due: " + t.date + ")" : ""}\n`; }); text += "\n"; }
     const noteIdStr = String(note.id); let hash = 0;
     for (let i = 0; i < noteIdStr.length; i++) { hash = ((hash << 5) - hash) + noteIdStr.charCodeAt(i); hash |= 0; }
     const accessCode = Math.abs(hash).toString().substring(0, 6).padStart(6, '0');
@@ -286,7 +288,7 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
               </div>
               <div style={dk.progressTrack}><div style={dk.progressBar(progress)} /></div>
               <div>
-                {note.tasks.map(task => (
+                {tasks.map(task => (
                   <div key={task.id} style={dk.taskItem(task.done)}>
                     <button onClick={() => toggleTask(note.id, task.id)} style={{ color: task.done ? '#34d399' : '#374151', background: 'none', border: 'none', cursor: 'pointer', marginTop: 2, flexShrink: 0 }}>
                       {task.done ? <CheckCircle2 size={20} /> : <Circle size={20} />}
@@ -306,8 +308,8 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
                               const assigneeUserId = e.target.value || '';
                               const member = assigneeUserId ? teamMembers.find((m) => String(m.userId) === String(assigneeUserId)) : null;
                               const assignee = member ? (member.email || member.username || member.displayName || '') : '';
-                              const tasks = (note.tasks || []).map((t) => t.id === task.id ? { ...t, assigneeUserId: assigneeUserId || null, assignee } : t);
-                              updateNote(note.id, { tasks });
+                              const nextTasks = tasks.map((t) => t.id === task.id ? { ...t, assigneeUserId: assigneeUserId || null, assignee } : t);
+                              updateNote(note.id, { tasks: nextTasks });
                             }}
                             style={{ width: '100%', padding: '10px 12px', backgroundColor: '#161616', border: '1px solid #2a2a2a', borderRadius: 12, color: '#9ca3af', fontSize: 12, fontWeight: 700, outline: 'none' }}
                           >

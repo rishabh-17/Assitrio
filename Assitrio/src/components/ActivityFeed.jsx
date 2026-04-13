@@ -21,7 +21,7 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
           // Format time from targetDateObj if available, else note time
           let displayTime = n.time || '';
           if (targetDateObj) {
-            displayTime = targetDateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+            displayTime = targetDateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' });
           }
 
           events.push({
@@ -80,7 +80,7 @@ export default function ActivityFeed({ activities = [], notes = [] }) {
     const d = new Date(raw);
     if (Number.isNaN(d.getTime())) return 'Recent';
     try {
-      return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
     } catch (e) {
       return 'Recent';
     }

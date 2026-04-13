@@ -108,8 +108,8 @@ export default function ListenSimulator({ onClose, onSaveDraft, updateNote, appe
     recordListenUsage(durationSeconds);
     const draft = {
       id: newId, title: 'AI Processing...', summary: 'Analyzing meeting dynamics...', mom: 'Generating professional minutes...', tasks: [],
-      date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }),
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
       duration: `${durationMins}m`, transcript: 'Transcribing meeting...', audioUrl: localAudioUrl, source: 'listen',
     };
     onSaveDraft(draft); onClose();

@@ -10,10 +10,38 @@ function safeToNumber(v) {
 
 function timeLabelNow() {
   try {
-    return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
   } catch (e) {
     return 'Just Now';
   }
+}
+
+function dateLabelNowIST() {
+  try {
+    return new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  } catch (e) {
+    return null;
+  }
+}
+
+function timeLabelNowIST() {
+  try {
+    return new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+  } catch (e) {
+    return null;
+  }
+}
+
+function istIsoFromDate(d) {
+  const ms = (d instanceof Date ? d.getTime() : Date.now()) + 330 * 60 * 1000;
+  const ist = new Date(ms);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(ist.getUTCDate()).padStart(2, '0');
+  const hh = String(ist.getUTCHours()).padStart(2, '0');
+  const mm = String(ist.getUTCMinutes()).padStart(2, '0');
+  const ss = String(ist.getUTCSeconds()).padStart(2, '0');
+  return `${y}-${m}-${day}T${hh}:${mm}:${ss}+05:30`;
 }
 
 async function logActivity(req, payload) {
@@ -202,6 +230,8 @@ exports.createNote = async (req, res) => {
     const body = { ...(req.body || {}) };
     delete body.teamId;
     delete body.createdByUserId;
+    if (!body.date) body.date = dateLabelNowIST();
+    if (!body.time) body.time = timeLabelNowIST();
     if (Array.isArray(body.tasks)) {
       body.tasks = body.tasks.map((t) => ({
         ...t,
@@ -245,6 +275,9 @@ exports.updateNote = async (req, res) => {
 
     const payload = req.body || {};
     const updates = { ...payload };
+    const now = new Date();
+    updates.updatedAt = now;
+    updates.updatedAtIST = istIsoFromDate(now);
 
     if (updates.assigneeUserId && before.teamId) {
       const team = await Team.findById(before.teamId).select('ownerId members.userId');
