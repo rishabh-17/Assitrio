@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Send, Circle, AudioLines, Keyboard, ChevronLeft, FileText } from 'lucide-react';
+import { Send, AudioLines, ChevronLeft, FileText } from 'lucide-react';
 import { Room, RoomEvent, Track } from 'livekit-client';
 import { WavRecorder } from '../../utils/wavRecorder';
 import { mergeWavBlobs, pcmChunksToWavBlob, mixWavBlobs } from '../../utils/wavMerge';
@@ -329,7 +329,7 @@ export default function TalkSimulator({ onClose, notes = [], teamMembers = [], c
     onClose();
   }, [onClose, onSaveMOM, saveTalkNote]);
 
-  const statusLabel = livekitAvailable ? (livekitConnected ? 'LiveKit Connected' : 'LiveKit Ready') : 'Realtime Elite Active';
+  const statusLabel = 'Chat Active';
 
   return (
     <div style={{ position: 'absolute', inset: 0, backgroundColor: '#111111', zIndex: 110, display: 'flex', flexDirection: 'column', fontFamily: 'system-ui,-apple-system,sans-serif' }}>
@@ -358,24 +358,6 @@ export default function TalkSimulator({ onClose, notes = [], teamMembers = [], c
           </button>
         </div>
       </div>
-
-      {inputMode === 'voice' && voiceState !== 'idle' && (
-        <div style={{ padding: '20px 20px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, backgroundColor: '#111' }}>
-          <div style={{ position: 'relative', width: 88, height: 88, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ position: 'absolute', inset: 0, borderRadius: '50%', backgroundColor: 'rgba(52,211,153,0.08)', animation: 'ping 2s cubic-bezier(0,0,0.2,1) infinite' }} />
-            <div style={{ position: 'relative', zIndex: 10, width: 72, height: 72, borderRadius: '50%', backgroundColor: '#1a1a1a', border: '3px solid #2a2a2a', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.4)' }}>
-              {voiceState === 'ai-speaking' ? (
-                <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 24 }}>
-                  {[1, 2, 3, 4, 3, 2, 1].map((h, i) => <div key={i} style={{ width: 3, height: h * 4, backgroundColor: '#a78bfa', borderRadius: 99 }} />)}
-                </div>
-              ) : <Mic size={26} style={{ color: '#a78bfa' }} />}
-            </div>
-          </div>
-          <p style={{ fontSize: 11, fontWeight: 800, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em' }}>
-            {voiceState === 'listening' ? 'Agent Listening' : voiceState === 'processing' ? 'Thinking...' : 'Agent Speaking'}
-          </p>
-        </div>
-      )}
 
       {/* Messages */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -407,36 +389,12 @@ export default function TalkSimulator({ onClose, notes = [], teamMembers = [], c
 
       {/* Controls */}
       <div style={{ backgroundColor: '#161616', borderTop: '1px solid #1f1f1f', padding: '16px 20px 32px' }}>
-        {inputMode === 'voice' ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {voiceState !== 'idle' && (
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => { const next = !isMuted; setIsMuted(next); if (livekitRoomRef.current) { livekitRoomRef.current.localParticipant.setMicrophoneEnabled(!next); return; } recorderRef.current?.setMuted(next); }} style={{ flex: 1, padding: '14px', borderRadius: 20, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: 'none', cursor: 'pointer', backgroundColor: isMuted ? '#f59e0b' : '#1e1e1e', color: '#fff', boxShadow: isMuted ? '0 4px 16px rgba(245,158,11,0.3)' : 'none' }}>
-                  {isMuted ? <MicOff size={15} /> : <Mic size={15} />}{isMuted ? 'Unmute' : 'Mute'}
-                </button>
-                <button onClick={stopVoiceRecording} style={{ flex: 1, padding: '14px', borderRadius: 20, fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: 'none', cursor: 'pointer', backgroundColor: '#ef4444', color: '#fff', boxShadow: '0 4px 16px rgba(239,68,68,0.3)' }}>
-                  End Call
-                </button>
-              </div>
-            )}
-            {voiceState === 'idle' && (
-              <button onClick={startVoiceRecording} style={{ width: '100%', padding: '18px', borderRadius: 24, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: '#fff', fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.15em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: '0 8px 24px rgba(109,91,250,0.4)' }}>
-                <Mic size={18} /> Start Meeting
-              </button>
-            )}
-            <button onClick={() => setInputMode('text')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, color: '#374151', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', background: 'none', border: 'none', cursor: 'pointer', marginTop: voiceState === 'idle' ? 0 : 8 }}>
-              <Keyboard size={13} /> Switch to Keyboard
-            </button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#1a1a1a', borderRadius: 20, padding: '6px 8px', border: '1px solid #2a2a2a' }}>
-            <button onClick={() => setInputMode('voice')} style={{ padding: 8, color: '#4b5563', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center' }}><Mic size={20} /></button>
-            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendText()} placeholder="Ask about your meetings..." style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#f3f4f6', fontWeight: 500, padding: '8px 4px' }} />
-            <button onClick={() => handleSendText()} disabled={!input.trim()} style={{ padding: 10, borderRadius: 14, border: 'none', cursor: input.trim() ? 'pointer' : 'default', backgroundColor: input.trim() ? '#6d5bfa' : '#222', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? '0 4px 12px rgba(109,91,250,0.35)' : 'none' }}>
-              <Send size={16} />
-            </button>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, backgroundColor: '#1a1a1a', borderRadius: 20, padding: '6px 8px', border: '1px solid #2a2a2a' }}>
+          <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSendText()} placeholder="Ask about your meetings..." style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#f3f4f6', fontWeight: 500, padding: '8px 4px' }} />
+          <button onClick={() => handleSendText()} disabled={!input.trim()} style={{ padding: 10, borderRadius: 14, border: 'none', cursor: input.trim() ? 'pointer' : 'default', backgroundColor: input.trim() ? '#6d5bfa' : '#222', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: input.trim() ? '0 4px 12px rgba(109,91,250,0.35)' : 'none' }}>
+            <Send size={16} />
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, AudioLines, Plus } from 'lucide-react';
+import { Mic, MessageCircle, Plus } from 'lucide-react';
 
 export default function ActionMenu({ onClose, onSelect }) {
   return (
@@ -56,13 +56,13 @@ export default function ActionMenu({ onClose, onSelect }) {
         >
           <div style={{ textAlign: 'left' }}>
             <h2 style={{ fontSize: 20, fontWeight: 800, color: '#f9fafb', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
-              Talk to AI
+              Chat with AI
               <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#34d399', display: 'inline-block' }} />
             </h2>
-            <p style={{ fontSize: 12, color: '#4b5563', margin: 0, fontWeight: 500 }}>Voice Chat with Memory</p>
+            <p style={{ fontSize: 12, color: '#4b5563', margin: 0, fontWeight: 500 }}>Chat with Memory</p>
           </div>
           <div style={{ backgroundColor: 'rgba(109,91,250,0.12)', padding: 14, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}>
-            <AudioLines size={24} />
+            <MessageCircle size={24} />
           </div>
         </button>
 

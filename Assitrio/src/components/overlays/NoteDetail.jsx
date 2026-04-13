@@ -116,6 +116,9 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
         <button style={dk.backBtn} onClick={onClose}><ChevronLeft size={19} /> Back</button>
         <div style={dk.headerActions}>
           <button style={dk.iconBtn('rgba(109,91,250,0.1)', '#a78bfa')} onClick={() => setShowShareSheet(true)} aria-label="Share"><Share2 size={15} /></button>
+          {deleteNote && (
+            <button style={dk.iconBtn('rgba(239,68,68,0.12)', '#f87171')} onClick={() => setShowDeleteConfirm(true)} aria-label="Delete"><Trash2 size={15} /></button>
+          )}
         </div>
       </div>
 
@@ -200,7 +203,7 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
 
             {/* Transcript */}
             <div style={{ ...dk.card, padding: 0, overflow: 'hidden' }}>
-              <div style={{...dk.transcriptToggle, cursor: 'default'}}>
+              <div style={{ ...dk.transcriptToggle, cursor: 'default' }}>
                 <p style={dk.cardLabel()}><FileText size={15} />Extended Transcript {note.diarization?.length > 0 && <span style={{ fontSize: 8, fontWeight: 800, backgroundColor: 'rgba(52,211,153,0.1)', color: '#34d399', padding: '2px 7px', borderRadius: 6, marginLeft: 6 }}>DIARIZED</span>}</p>
               </div>
               <div style={dk.transcriptBody}>
@@ -215,11 +218,6 @@ export default function NoteDetail({ note, initialTab = 'summary', onClose, togg
               </div>
             </div>
 
-            {deleteNote && (
-              <button onClick={() => setShowDeleteConfirm(true)} style={{ width: '100%', padding: '16px', borderRadius: 16, backgroundColor: '#1a1a1a', border: '1px solid rgba(239,68,68,0.2)', color: '#f87171', fontWeight: 800, fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, cursor: 'pointer', marginTop: 32 }}>
-                <Trash2 size={16} /> Delete This Note
-              </button>
-            )}
           </div>
         )}
 

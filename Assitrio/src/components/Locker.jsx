@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Archive, CheckCircle2, Circle, ChevronRight, Calendar, Clock, Trash2, Pencil, Check, X, Search, Filter, FileText, Mic, MessageCircle, Flag, Mail, Users } from 'lucide-react';
+import { Archive, CheckCircle2, Circle, ChevronRight, ChevronDown, Calendar, Clock, Trash2, Pencil, Check, X, Search, Filter, FileText, Mic, MessageCircle, Flag, Mail, Users } from 'lucide-react';
 
 const dk = {
   root: { padding: '20px 16px 100px', backgroundColor: '#111111', minHeight: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' },
   title: { fontSize: 22, fontWeight: 800, color: '#f9fafb', letterSpacing: '-0.3px', paddingTop: 24, marginBottom: 20 },
-  toggleGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))', gap: 12, marginBottom: 20 },
-  toggleBtn: (active) => ({ padding: 16, borderRadius: 18, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, border: `2px solid ${active ? '#6d5bfa' : '#222'}`, backgroundColor: active ? 'rgba(109,91,250,0.08)' : '#1a1a1a', cursor: 'pointer' }),
-  toggleIcon: (active) => ({ padding: 10, borderRadius: 12, backgroundColor: active ? 'rgba(109,91,250,0.2)' : '#222', color: active ? '#a78bfa' : '#4b5563' }),
-  toggleLabel: (active) => ({ fontSize: 12, fontWeight: 700, color: active ? '#a78bfa' : '#6b7280' }),
-  toggleCount: { fontSize: 10, color: '#4b5563', fontWeight: 500 },
+  toggleGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 },
+  toggleBtn: (active) => ({ padding: 12, borderRadius: 14, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, border: `1px solid ${active ? 'rgba(109,91,250,0.6)' : '#222'}`, backgroundColor: active ? 'rgba(109,91,250,0.08)' : '#1a1a1a', cursor: 'pointer' }),
+  toggleIcon: (active) => ({ padding: 8, borderRadius: 12, backgroundColor: active ? 'rgba(109,91,250,0.2)' : '#222', color: active ? '#a78bfa' : '#4b5563' }),
+  toggleLabel: (active) => ({ fontSize: 11, fontWeight: 800, color: active ? '#c4b5fd' : '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }),
+  toggleCount: { fontSize: 9, color: '#4b5563', fontWeight: 600 },
   filterRow: { display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' },
   searchWrap: { position: 'relative', flex: 1, minWidth: 140 },
   searchIcon: { position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#4b5563', pointerEvents: 'none' },
@@ -17,6 +17,7 @@ const dk = {
   dateInput: { paddingLeft: 36, paddingRight: 14, paddingTop: 10, paddingBottom: 10, backgroundColor: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 12, fontSize: 13, color: '#f3f4f6', outline: 'none', boxSizing: 'border-box', minWidth: 140 },
   filterWrap: { position: 'relative' },
   filterIconAbs: { position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#4b5563', pointerEvents: 'none', zIndex: 1 },
+  dropdownIconAbs: { position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', color: '#374151', pointerEvents: 'none', zIndex: 1 },
   sectionLabel: { fontSize: 10, fontWeight: 700, color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   badge: (color) => ({ fontSize: 10, fontWeight: 700, backgroundColor: color === 'amber' ? 'rgba(245,158,11,0.1)' : 'transparent', color: color === 'amber' ? '#f59e0b' : '#34d399', border: `1px solid ${color === 'amber' ? 'rgba(245,158,11,0.2)' : 'transparent'}`, borderRadius: 99, padding: '2px 8px' }),
   noteCard: { backgroundColor: '#1a1a1a', border: '1px solid #222', borderRadius: 16, padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: 8 },
@@ -32,12 +33,15 @@ const dk = {
   emptyBox: { backgroundColor: '#1a1a1a', borderRadius: 16, border: '1px solid #222', padding: '32px 24px', textAlign: 'center' },
 };
 
-export default function Locker({ notes = [], teamNotes = [], teamEnabled = false, teamMembers = [], currentUserId = '', pendingTasks = [], completedTasks = [], toggleTask, openNote, deleteNote, deleteTask, updateTask }) {
+export default function Locker({ notes = [], teamNotes = [], teamEnabled = false, teamMembers = [], currentUserId = '', currentUserEmail = '', currentUserUsername = '', pendingTasks = [], completedTasks = [], toggleTask, openNote, deleteNote, deleteTask, updateTask }) {
   const [view, setView] = useState('notes');
   const [searchQuery, setSearchQuery] = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
+  const [notesScope, setNotesScope] = useState('my');
+  const [tasksScope, setTasksScope] = useState('all');
+  const [taskOwnershipFilter, setTaskOwnershipFilter] = useState('all');
   const [assigneeFilter, setAssigneeFilter] = useState('all');
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [editTaskValue, setEditTaskValue] = useState('');
@@ -237,12 +241,55 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
     return matchesSearch && matchesDate;
   });
 
-  const prepTasks = (tasks) => tasks.map(t => { const pn = notes.find(n => n.id === t.noteId); return { ...t, noteDate: pn?.date || 'Today' }; });
+  const noteIndex = new Map([...(notes || []), ...(teamNotes || [])].map((n) => [n.id, n]));
+  const prepTasks = (tasks) => tasks.map(t => {
+    const pn = noteIndex.get(t.noteId);
+    const noteDate = pn?.date || 'Today';
+    const noteTitle = pn?.title || t.noteTitle;
+    const scope = pn?.teamId ? 'team' : (t.scope || 'personal');
+    return { ...t, noteDate, noteTitle, scope };
+  });
+
   const uniqueAssignees = [...new Set([...pendingTasks, ...completedTasks].map(t => t.assignee).filter(Boolean))].sort();
-  const filteredNotes = getFilteredItems(notes);
-  const filteredTeamNotes = getFilteredItems(teamNotes);
+  const allNotesCount = (notes?.length || 0) + (teamEnabled ? (teamNotes?.length || 0) : 0);
+  const activeNotes = (teamEnabled && notesScope === 'team') ? teamNotes : notes;
+  const filteredNotes = getFilteredItems(activeNotes);
   let filteredPending = getFilteredItems(prepTasks(pendingTasks));
   let filteredCompleted = getFilteredItems(prepTasks(completedTasks));
+
+  if (view === 'tasks') {
+    const applyScope = (arr) => {
+      if (tasksScope === 'my') return arr.filter((t) => t.scope !== 'team');
+      if (tasksScope === 'team') return arr.filter((t) => t.scope === 'team');
+      return arr;
+    };
+    filteredPending = applyScope(filteredPending);
+    filteredCompleted = applyScope(filteredCompleted);
+
+    const uid = String(currentUserId || '');
+    const userEmail = String(currentUserEmail || '').toLowerCase();
+    const userUsername = String(currentUserUsername || '').toLowerCase();
+    const applyOwnershipFilter = (arr) => {
+      if (taskOwnershipFilter === 'assigned_to_me') {
+        return arr.filter((t) => {
+          if (uid && String(t.assigneeUserId || '') === uid) return true;
+          const a = (t.assignee || '').toLowerCase();
+          if (!a) return false;
+          if (userEmail && a === userEmail) return true;
+          if (userUsername && (a === userUsername || a.split('@')[0] === userUsername)) return true;
+          return false;
+        });
+      }
+      if (taskOwnershipFilter === 'assigned_by_me') {
+        return arr.filter((t) => uid && String(t.createdByUserId || '') === uid);
+      }
+      return arr;
+    };
+
+    filteredPending = applyOwnershipFilter(filteredPending);
+    filteredCompleted = applyOwnershipFilter(filteredCompleted);
+  }
+
   if (assigneeFilter !== 'all') {
     const fn = t => assigneeFilter === 'unassigned' ? !t.assignee : t.assignee === assigneeFilter;
     filteredPending = filteredPending.filter(fn);
@@ -250,9 +297,8 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
   }
 
   const noteTabs = [
-    { id: 'notes', Icon: Archive, label: 'Notes (MOM)', count: `${notes.length} entries` },
-    ...(teamEnabled ? [{ id: 'team', Icon: Users, label: 'Team Notes', count: `${teamNotes.length} entries` }] : []),
-    { id: 'tasks', Icon: CheckCircle2, label: 'All Tasks', count: `${filteredPending.length + filteredCompleted.length} items` }
+    { id: 'notes', Icon: Archive, label: 'Notes', count: `${allNotesCount}` },
+    { id: 'tasks', Icon: CheckCircle2, label: 'All Tasks', count: `${filteredPending.length + filteredCompleted.length}` }
   ];
 
   return (
@@ -262,10 +308,10 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
       <div style={dk.toggleGrid}>
         {noteTabs.map(({ id, Icon, label, count }) => (
           <button key={id} style={dk.toggleBtn(view === id)} onClick={() => setView(id)}>
-            <div style={dk.toggleIcon(view === id)}><Icon size={22} /></div>
+            {/* <div style={dk.toggleIcon(view === id)}><Icon size={22} /></div> */}
             <div style={{ textAlign: 'center' }}>
-              <span style={dk.toggleLabel(view === id)}>{label}</span>
-              <span style={{ ...dk.toggleCount, display: 'block', marginTop: 2 }}>{count}</span>
+              <span style={dk.toggleLabel(view === id)}>{label}<span style={{ ...dk.toggleCount, marginTop: 2, marginLeft: 2 }}>({count})</span></span>
+
             </div>
           </button>
         ))}
@@ -277,6 +323,38 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
           <Search size={15} style={dk.searchIcon} />
           <input type="text" style={dk.searchInput} placeholder={`Search ${view}...`} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
+        {view === 'notes' && teamEnabled && (
+          <div style={dk.filterWrap}>
+            <Users size={15} style={dk.filterIconAbs} />
+            <select style={dk.filterSelect} value={notesScope} onChange={(e) => setNotesScope(e.target.value)}>
+              <option value="my">My Notes</option>
+              <option value="team">Team Notes</option>
+            </select>
+            <ChevronDown size={16} style={dk.dropdownIconAbs} />
+          </div>
+        )}
+        {view === 'tasks' && teamEnabled && (
+          <div style={dk.filterWrap}>
+            <Users size={15} style={dk.filterIconAbs} />
+            <select style={dk.filterSelect} value={tasksScope} onChange={(e) => { setTasksScope(e.target.value); }}>
+              <option value="all">All Tasks</option>
+              <option value="my">My Tasks</option>
+              <option value="team">Team Tasks</option>
+            </select>
+            <ChevronDown size={16} style={dk.dropdownIconAbs} />
+          </div>
+        )}
+        {view === 'tasks' && (
+          <div style={dk.filterWrap}>
+            <Mail size={15} style={dk.filterIconAbs} />
+            <select style={dk.filterSelect} value={taskOwnershipFilter} onChange={(e) => setTaskOwnershipFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="assigned_to_me">Assigned to me</option>
+              <option value="assigned_by_me">Assigned by me</option>
+            </select>
+            <ChevronDown size={16} style={dk.dropdownIconAbs} />
+          </div>
+        )}
         <div style={dk.filterWrap}>
           <Filter size={15} style={dk.filterIconAbs} />
           <select style={dk.filterSelect} value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
@@ -286,6 +364,7 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
             <option value="7days">Last 7 Days</option>
             <option value="custom">Custom Range</option>
           </select>
+          <ChevronDown size={16} style={dk.dropdownIconAbs} />
         </div>
         {dateFilter === 'custom' && (
           <>
@@ -313,12 +392,12 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
 
       {view === 'notes' ? (
         <div>
-          <p style={dk.sectionLabel}>Chronological</p>
+          <p style={dk.sectionLabel}><span>{teamEnabled && notesScope === 'team' ? 'Team Notes' : 'My Notes'}</span><span style={dk.badge('amber')}>{filteredNotes.length}</span></p>
           {filteredNotes.length === 0 ? (
             <div style={dk.emptyBox}><Archive size={28} style={{ color: '#2a2a2a', margin: '0 auto 10px', display: 'block' }} /><p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>No memories found</p></div>
           ) : filteredNotes.map(note => (
             <div key={note.id} style={dk.noteCard}>
-              <div style={{ flex: 1, paddingRight: 10, minWidth: 0 }} onClick={() => openNote(note.id)}>
+              <div style={{ flex: 1, paddingRight: 10, minWidth: 0 }} onClick={() => openNote(note.id, 'summary', teamEnabled && notesScope === 'team' ? 'team' : 'personal')}>
                 <h4 style={dk.noteTitle}>{note.title}</h4>
                 <p style={{ fontSize: 11, color: '#4b5563', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.summary}</p>
                 <div style={dk.noteMeta}>
@@ -329,32 +408,7 @@ export default function Locker({ notes = [], teamNotes = [], teamEnabled = false
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <div onClick={() => openNote(note.id)} style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <ChevronRight size={15} style={{ color: '#4b5563' }} />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : view === 'team' ? (
-        <div>
-          <p style={dk.sectionLabel}>Team</p>
-          {filteredTeamNotes.length === 0 ? (
-            <div style={dk.emptyBox}><Users size={28} style={{ color: '#2a2a2a', margin: '0 auto 10px', display: 'block' }} /><p style={{ fontSize: 13, color: '#6b7280', margin: 0 }}>No team notes found</p></div>
-          ) : filteredTeamNotes.map(note => (
-            <div key={note.id} style={dk.noteCard}>
-              <div style={{ flex: 1, paddingRight: 10, minWidth: 0 }} onClick={() => openNote(note.id, 'summary', 'team')}>
-                <h4 style={dk.noteTitle}>{note.title}</h4>
-                <p style={{ fontSize: 11, color: '#4b5563', marginBottom: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{note.summary}</p>
-                <div style={dk.noteMeta}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Calendar size={9} />{note.date}</span>
-                  <span>•</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{note.time}</span>
-                  <span>•</span><span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>{note.source === 'talk' ? <MessageCircle size={9} /> : <Mic size={9} />}{note.source === 'talk' ? 'Talk' : 'Listen'}</span>
-                  <span>•</span><span>{note.tasks.filter(t => !t.done).length} pending</span>
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                <div onClick={() => openNote(note.id, 'summary', 'team')} style={{ width: 32, height: 32, borderRadius: '50%', backgroundColor: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <div onClick={() => openNote(note.id, 'summary', teamEnabled && notesScope === 'team' ? 'team' : 'personal')} style={{ width: 30, height: 30, borderRadius: '50%', backgroundColor: '#222', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                   <ChevronRight size={15} style={{ color: '#4b5563' }} />
                 </div>
               </div>

@@ -425,6 +425,8 @@ function AuthenticatedApp({ currentUser, logout }) {
                   teamEnabled={teamEnabled}
                   teamMembers={teamMembers}
                   currentUserId={String(currentUser?.id || '')}
+                  currentUserEmail={String(currentUser?.email || '')}
+                  currentUserUsername={String(currentUser?.username || '')}
                   pendingTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => !t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: n.teamId ? 'team' : 'personal' })))}
                   completedTasks={allNotes.flatMap(n => (n.tasks || []).filter(t => t.done).map(t => ({ ...t, noteId: n.id, noteTitle: n.title, scope: n.teamId ? 'team' : 'personal' })))}
                   toggleTask={(noteId, taskId) => toggleTask(noteId, taskId, teamEnabled && teamNotes?.some(n => n.id === noteId) ? 'team' : 'personal')}
