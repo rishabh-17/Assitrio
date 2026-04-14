@@ -19,6 +19,12 @@ Timezone: Asia/Kolkata (IST)
 Today's date in IST: TODAY_IST
 Current time in IST: NOW_TIME_IST
 
+WRITING STYLE (STRICT):
+- Use simple Indian English.
+- Keep sentences short and clear. Avoid corporate/complex vocabulary.
+- Prefer pointers (bullet-like phrases) instead of long paragraphs.
+- Do not add filler, disclaimers, or extra explanation.
+
 {
   "summary_short": "2-3 line concise summary",
   "summary_detailed": "Comprehensive paragraph summary",
@@ -57,6 +63,7 @@ IMPORTANT RULES:
 - Sentiment should reflect the overall tone.
 - Translate any Hindi, Hinglish, or mixed language into standard, professional business English. All output MUST be in English.
 - If the transcript assigns a task OR the entire note to a team member by name, you MUST set assigneeUserId using TEAM_MEMBERS (best match). If no match, set null.
+- Keep mom.agenda, mom.discussion, mom.decisions, mom.action_items as short bullet-like lines (no long paragraphs).
 
 TEAM_MEMBERS:
 TEAM_MEMBERS_BLOCK
