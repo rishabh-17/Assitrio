@@ -18,8 +18,9 @@ export default function SubscriptionPlans({ currentPlan, onClose, onSuccess }) {
     setLoading(plan.id);
     try {
       const order = await paymentService.createOrder(plan.id);
+      console.log("rzp 1")
       const options = {
-        key: 'rzp_test_YourKeyHere', amount: order.amount, currency: order.currency,
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID, amount: order.amount, currency: order.currency,
         name: 'Assistrio AI', description: `Upgrade to ${plan.name} Tier`, order_id: order.id,
         handler: async (response) => {
           try {
@@ -29,8 +30,17 @@ export default function SubscriptionPlans({ currentPlan, onClose, onSuccess }) {
         },
         theme: { color: '#6d5bfa' }
       };
+
+      if (!window.Razorpay) {
+        throw new Error('Razorpay script not loaded. Please disable adblockers or check your connection.');
+      }
+
       new window.Razorpay(options).open();
-    } catch { toast.error('Failed to initiate checkout'); }
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || 'Failed to initiate checkout';
+      console.error('Checkout error:', err);
+      toast.error(msg);
+    }
     finally { setLoading(null); }
   };
 

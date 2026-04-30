@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { getUsageStats, syncGlobalConfig } from '../services/usageTracker';
 import * as calendarService from '../services/calendarService';
-import { userService, teamService } from '../services/apiService';
+import { userService, teamService, paymentService } from '../services/apiService';
+import toast from 'react-hot-toast';
 
 const dk = {
   root: { padding: '20px 16px 100px', backgroundColor: '#111111', minHeight: '100%', fontFamily: 'system-ui,-apple-system,sans-serif' },
@@ -71,6 +72,35 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
   const [globalConfig, setGlobalConfig] = useState(null);
   const [googleCal, setGoogleCal] = useState(calendarService.isGoogleConnected());
   const [msCal, setMsCal] = useState(calendarService.isMicrosoftConnected());
+  const [loadingPlan, setLoadingPlan] = useState(null);
+
+  const handleSubscribe = async (plan) => {
+    if (user?.plan === plan.name) { toast('You are already on this plan'); return; }
+    if (plan.name === 'Free') { toast('Please contact support to downgrade'); return; }
+    setLoadingPlan(plan.name);
+    try {
+      const order = await paymentService.createOrder(plan.name);
+      console.log('Order created:', order);
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_SjdBBu9s2xbZN3', amount: order.amount, currency: order.currency,
+        name: 'Assistrio AI', description: `Upgrade to ${plan.name} Tier`, order_id: order.id,
+        handler: async (response) => {
+          try {
+            const v = await paymentService.verifyPayment({ ...response, plan: plan.name });
+            if (v.success) { toast.success(`Welcome to ${plan.name}!`); window.location.reload(); }
+          } catch { toast.error('Payment verification failed'); }
+        },
+        theme: { color: '#6d5bfa' }
+      };
+      if (!window.Razorpay) throw new Error('Razorpay script not loaded. Please disable adblockers or check your connection.');
+      new window.Razorpay(options).open();
+    } catch (err) { 
+      const msg = err?.response?.data?.error || err?.message || 'Failed to initiate checkout';
+      console.error('Checkout error:', err);
+      toast.error(msg); 
+    }
+    finally { setLoadingPlan(null); }
+  };
 
   useEffect(() => { syncGlobalConfig().then(setGlobalConfig); }, []);
 
@@ -193,6 +223,11 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
     setTeamBusy(true);
     setTeamError('');
     try {
+      const order = await paymentService.createOrder(plan.name);
+      console.log('Order created:', order);
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_SjdBBu9s2xbZN3', amount: order.amount, currency: order.currency
+      };
       const resp = await teamService.acceptInvite(inviteId);
       const teamId = resp?.team?.id || resp?.team?._id || null;
       if (teamId) patchSession({ memberTeamId: teamId });
@@ -421,8 +456,8 @@ export default function Profile({ user, onLogout, deletedNotes = [], restoreNote
                 <div style={{ backgroundColor: '#111', borderRadius: 10, padding: '10px 12px', marginBottom: 14, fontSize: 12, color: '#6b7280', fontWeight: 600 }}>
                   {plan.monthlyLimit >= 9000 ? 'Unlimited Processing' : `${plan.monthlyLimit} Minutes / Month`}
                 </div>
-                <button disabled={user?.plan === plan.name} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: user?.plan === plan.name ? 'default' : 'pointer', backgroundColor: user?.plan === plan.name ? '#222' : 'transparent', background: user?.plan === plan.name ? '#222' : 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: user?.plan === plan.name ? '#4b5563' : '#fff', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  {user?.plan === plan.name ? 'Current Plan' : `Upgrade to ${plan.name}`}
+                <button onClick={() => handleSubscribe(plan)} disabled={user?.plan === plan.name || loadingPlan === plan.name} style={{ width: '100%', padding: '12px', borderRadius: 12, border: 'none', cursor: (user?.plan === plan.name || loadingPlan === plan.name) ? 'default' : 'pointer', backgroundColor: user?.plan === plan.name ? '#222' : 'transparent', background: user?.plan === plan.name ? '#222' : 'linear-gradient(135deg,#6d5bfa,#9b5de5)', color: user?.plan === plan.name ? '#4b5563' : '#fff', fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                  {loadingPlan === plan.name ? 'Processing...' : user?.plan === plan.name ? 'Current Plan' : `Upgrade to ${plan.name}`}
                 </button>
               </div>
             ))}
